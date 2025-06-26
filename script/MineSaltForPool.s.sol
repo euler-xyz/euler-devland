@@ -15,7 +15,7 @@ contract MineSaltForPool is Script {
         address vault0 = vm.envOr("VAULT0", address(0x864516a3e56ab9b821B19F6bfB898FA28f21E0cB));
         address vault1 = vm.envOr("VAULT1", address(0xB9D512FAF432Ce6A0e09b1f2B195856F9E5EE822));
         address eulerAccount = vm.envOr("EULER_ACCOUNT", address(0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266));
-        address eulerSwapFactory = vm.envOr("FACTORY", address(0x55d09f01fBF9D8D891c6608C5a54EA7AD6d528fb));
+        address eulerSwapFactory = vm.envOr("FACTORY", address(0x55D09F01fBF9D8D891c6608c5a54eA7aD6d528FB));
         address eulerSwapImpl = vm.envOr("IMPL", address(0x48d617CA203f53C9909758799af38D1780b157F7));
         
         console.log("Mining salt for EulerSwap pool deployment");
