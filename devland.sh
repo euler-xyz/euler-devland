@@ -23,6 +23,7 @@ RPC_URL=http://127.0.0.1:$PORT bash ./deploy-scenario.sh "$SCENARIO"
 echo -------------------------------
 echo DEVLAND READY
 echo SCENARIO = $SCENARIO
+echo RPC URL = http://127.0.0.1:$PORT
 echo -------------------------------
 
 wait
