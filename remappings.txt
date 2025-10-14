@@ -5,7 +5,7 @@ openzeppelin-contracts/=libflat/openzeppelin-contracts/contracts/
 @uniswap/v4-periphery/=libflat/v4-periphery/
 v4-periphery/=libflat/v4-periphery/
 v4-core/=libflat/v4-core/src/
-solmate/=libflat/solmate/
+solmate/=libflat/solmate/src/
 
 ethereum-vault-connector/=libflat/ethereum-vault-connector/src/
 evc/=libflat/ethereum-vault-connector/src/

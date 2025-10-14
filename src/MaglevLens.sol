@@ -4,7 +4,7 @@ pragma solidity ^0.8.13;
 import {IEVC} from "evc/interfaces/IEthereumVaultConnector.sol";
 import {IEVault, IERC20} from "evk/EVault/IEVault.sol";
 import {RPow} from "evk/EVault/shared/lib/RPow.sol";
-import {IEulerSwapFactory} from "euler-swap/interfaces/IEulerSwapFactory.sol";
+import {IEulerSwapRegistry} from "euler-swap/interfaces/IEulerSwapRegistry.sol";
 import {IEulerSwap} from "euler-swap/interfaces/IEulerSwap.sol";
 
 contract MaglevLens {
@@ -189,7 +189,8 @@ contract MaglevLens {
 
     struct EulerSwapData {
         address addr;
-        IEulerSwap.Params params;
+        IEulerSwap.StaticParams sParams;
+        IEulerSwap.DynamicParams dParams;
         address asset0;
         address asset1;
         uint256 reserve0;
@@ -203,7 +204,8 @@ contract MaglevLens {
     function getEulerSwapData(address poolAddr) internal view returns (EulerSwapData memory output) {
         IEulerSwap pool = IEulerSwap(poolAddr);
         output.addr = poolAddr;
-        output.params = pool.getParams();
+        output.sParams = pool.getStaticParams();
+        output.dParams = pool.getDynamicParams();
         {
             (uint112 reserve0, uint112 reserve1,) = pool.getReserves();
             output.reserve0 = reserve0;
@@ -216,13 +218,17 @@ contract MaglevLens {
         (output.inLimit10, output.outLimit10) = pool.getLimits(asset1, asset0);
     }
 
-    function getMyEulerSwap(address eulerSwapFactory, address me) external view returns (EulerSwapData memory output) {
-        address poolAddr = IEulerSwapFactory(eulerSwapFactory).poolByEulerAccount(me);
+    function getMyEulerSwap(address eulerSwapRegistry, address me)
+        external
+        view
+        returns (EulerSwapData memory output)
+    {
+        address poolAddr = IEulerSwapRegistry(eulerSwapRegistry).poolByEulerAccount(me);
         if (poolAddr != address(0)) output = getEulerSwapData(poolAddr);
     }
 
-    function getEulerSwaps(address eulerSwapFactory) external view returns (EulerSwapData[] memory output) {
-        address[] memory addrs = IEulerSwapFactory(eulerSwapFactory).pools();
+    function getEulerSwaps(address eulerSwapRegistry) external view returns (EulerSwapData[] memory output) {
+        address[] memory addrs = IEulerSwapRegistry(eulerSwapRegistry).pools();
 
         output = new EulerSwapData[](addrs.length);
 

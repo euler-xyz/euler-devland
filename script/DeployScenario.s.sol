@@ -42,8 +42,10 @@ import {TestERC20} from "evk-test/unit/evault/EVaultTestBase.t.sol";
 import {IEVault} from "evk/EVault/IEVault.sol";
 import {IEulerSwap, IEVC, EulerSwap} from "euler-swap/EulerSwap.sol";
 import {EulerSwapFactory} from "euler-swap/EulerSwapFactory.sol";
+import {EulerSwapRegistry} from "euler-swap/EulerSwapRegistry.sol";
 import {EulerSwapPeriphery} from "euler-swap/EulerSwapPeriphery.sol";
 import {PoolManagerDeployer} from "euler-swap/../test/utils/PoolManagerDeployer.sol";
+import {PerspectiveMock} from "euler-swap/../test/utils/PerspectiveMock.sol";
 
 // Maglev stuff
 
@@ -123,7 +125,9 @@ contract DeployScenario is Script {
     address poolManager;
     address eulerSwapImpl;
     EulerSwapFactory eulerSwapFactory;
+    EulerSwapRegistry eulerSwapRegistry;
     EulerSwapPeriphery eulerSwapPeriphery;
+    PerspectiveMock perspectiveMock;
 
     //////// Maglev
 
@@ -268,9 +272,15 @@ contract DeployScenario is Script {
     }
 
     function deployEulerSwap() internal {
+        // Mocks
         poolManager = address(PoolManagerDeployer.deploy(address(0)));
+        perspectiveMock = new PerspectiveMock();
+
+        // EulerSwap contracts
         eulerSwapImpl = address(new EulerSwap(address(evc), poolManager));
-        eulerSwapFactory = new EulerSwapFactory(address(evc), address(factory), eulerSwapImpl, address(0), address(0));
+        eulerSwapFactory = new EulerSwapFactory(address(evc), eulerSwapImpl, address(0), address(0));
+        eulerSwapRegistry =
+            new EulerSwapRegistry(address(evc), address(eulerSwapFactory), address(perspectiveMock), address(0));
         eulerSwapPeriphery = new EulerSwapPeriphery();
 
         string memory result = vm.serializeAddress("eulerSwap", "eulerSwapFactory", address(eulerSwapFactory));
