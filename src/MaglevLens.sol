@@ -293,7 +293,8 @@ contract MaglevLens {
             }
 
             if (controller != address(0)) {
-                (bool success, bytes memory data) = controller.staticcall(abi.encodeCall(IRiskManager.accountLiquidity, (addr, true)));
+                (bool success, bytes memory data) =
+                    controller.staticcall(abi.encodeCall(IRiskManager.accountLiquidity, (addr, true)));
 
                 if (success) {
                     (uint256 collateralValue, uint256 liabilityValue) = abi.decode(data, (uint256, uint256));
