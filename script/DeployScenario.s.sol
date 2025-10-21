@@ -285,6 +285,7 @@ contract DeployScenario is Script {
 
         string memory result = vm.serializeAddress("eulerSwap", "eulerSwapFactory", address(eulerSwapFactory));
         result = vm.serializeAddress("eulerSwap", "eulerSwapPeriphery", address(eulerSwapPeriphery));
+        result = vm.serializeAddress("eulerSwap", "eulerSwapRegistry", address(eulerSwapRegistry));
         vm.writeJson(result, "./dev-ctx/addresses/31337/EulerSwapAddresses.json");
     }
 
