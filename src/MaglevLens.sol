@@ -2,14 +2,15 @@
 pragma solidity ^0.8.13;
 
 import {IEVC} from "evc/interfaces/IEthereumVaultConnector.sol";
-import {IEVault, IERC20} from "evk/EVault/IEVault.sol";
+import {IEVault, IERC20, IRiskManager} from "evk/EVault/IEVault.sol";
 import {RPow} from "evk/EVault/shared/lib/RPow.sol";
 import {IEulerSwapRegistry} from "euler-swap/interfaces/IEulerSwapRegistry.sol";
 import {IEulerSwap} from "euler-swap/interfaces/IEulerSwap.sol";
 
 contract MaglevLens {
-    // Packed: underlying asset (address), decimals (uint8), symbol (variable)
+    //// Vault queries
 
+    /// @dev Packed output: underlying asset (address), decimals (uint8), symbol (variable)
     function vaultsStatic(address[] calldata vaults) external view returns (bytes[] memory output) {
         unchecked {
             output = new bytes[](vaults.length);
@@ -187,6 +188,8 @@ contract MaglevLens {
         }
     }
 
+    //// EulerSwap queries
+
     struct EulerSwapData {
         address addr;
         IEulerSwap.StaticParams sParams;
@@ -265,5 +268,49 @@ contract MaglevLens {
         (uint112 reserve0, uint112 reserve1,) = IEulerSwap(eulerSwap).getReserves();
         require(reserve0 >= reserve0Min && reserve0 <= reserve0Max, AssertEulerSwapReservesFailure());
         require(reserve1 >= reserve1Min && reserve1 <= reserve1Max, AssertEulerSwapReservesFailure());
+    }
+
+    //// Liquidity Queries
+
+    error MultipleControllers();
+
+    /// Packed health score: controller (address), health (uint32), error (bool)
+    /// @dev Health scores are 1e6 scale.
+    function getHealthScores(address evc, address[] calldata addrs) external view returns (uint256[] memory healths) {
+        healths = new uint256[](addrs.length);
+
+        for (uint256 i = 0; i < addrs.length; ++i) {
+            address addr = addrs[i];
+
+            address controller;
+            uint32 health;
+            uint8 errorFlag;
+
+            {
+                address[] memory controllers = IEVC(evc).getControllers(addr);
+                require(controllers.length < 2, MultipleControllers());
+                if (controllers.length == 1) controller = controllers[0];
+            }
+
+            if (controller != address(0)) {
+                (bool success, bytes memory data) = controller.staticcall(abi.encodeCall(IRiskManager.accountLiquidity, (addr, true)));
+
+                if (success) {
+                    (uint256 collateralValue, uint256 liabilityValue) = abi.decode(data, (uint256, uint256));
+
+                    if (liabilityValue == 0) {
+                        health = type(uint32).max;
+                    } else {
+                        uint256 h = 1e6 * collateralValue / liabilityValue;
+                        if (h > type(uint32).max) h = type(uint32).max;
+                        health = uint32(h);
+                    }
+                } else {
+                    errorFlag = 1;
+                }
+            }
+
+            healths[i] = (uint160(controller) << 40) | (health << 32) | errorFlag;
+        }
     }
 }
