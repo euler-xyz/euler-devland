@@ -274,7 +274,7 @@ contract MaglevLens {
 
     error MultipleControllers();
 
-    /// Packed health score: controller (address), health (uint32), error (bool)
+    /// Packed health score: controller (address), subAccount (uint8), health (uint32), error (bool)
     /// @dev Health scores are 1e6 scale.
     function getHealthScores(address evc, address[] calldata addrs) external view returns (uint256[] memory healths) {
         healths = new uint256[](addrs.length);
@@ -283,8 +283,11 @@ contract MaglevLens {
             address addr = addrs[i];
 
             address controller;
+            uint8 subAccountId;
             uint32 health;
             uint8 errorFlag;
+
+            subAccountId = uint8((uint160(IEVC(evc).getAccountOwner(addr)) ^ uint160(addr)) & 0xFF);
 
             {
                 address[] memory controllers = IEVC(evc).getControllers(addr);
@@ -311,7 +314,11 @@ contract MaglevLens {
                 }
             }
 
-            healths[i] = (uint160(controller) << 40) | (health << 32) | errorFlag;
+            uint256 o = uint160(controller);
+            o = (o << 8) | subAccountId;
+            o = (o << 32) | health;
+            o = (o << 8) | errorFlag;
+            healths[i] = o;
         }
     }
 }
