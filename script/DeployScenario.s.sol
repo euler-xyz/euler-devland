@@ -259,19 +259,6 @@ contract DeployScenario is Script {
                 vm.writeLine(tokenListFile, string(abi.encodePacked("    \"decimals\": ", vm.toString(assets[i].decimals))));
 
                 vm.writeLine(tokenListFile, string(abi.encodePacked("  }", (i == assets.length - 1 ? "" : ","))));
-                /*
-                string memory line = string(
-                    abi.encodePacked(
-                        "\"",
-                        vm.toString(assets[i].asset),
-                        "\": {\"price\":",
-                        assets[i].price,
-                        "}",
-                        (i == assets.length - 1 ? "" : ",")
-                    )
-                );
-                vm.writeLine(pricesFile, line);
-                */
             }
 
             vm.writeLine(tokenListFile, "]");
