@@ -6,3 +6,6 @@ libs = ["lib"]
 auto_detect_remappings = false
 solc = "0.8.27"
 fs_permissions = [{ access = "read-write", path = "./dev-ctx/"}]
+
+[lint]
+lint_on_build = false
