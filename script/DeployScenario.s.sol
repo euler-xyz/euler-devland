@@ -8,6 +8,7 @@ import {Script, console} from "forge-std/Script.sol";
 // Deploy base
 
 import {GenericFactory} from "evk/GenericFactory/GenericFactory.sol";
+import {EulerRouterFactory} from "../src/vendor/EulerRouterFactory/EulerRouterFactory.sol";
 
 import {EVault} from "evk/EVault/EVault.sol";
 import {ProtocolConfig} from "evk/ProtocolConfig/ProtocolConfig.sol";
@@ -35,19 +36,6 @@ import {MockPriceOracle} from "evk-test/mocks/MockPriceOracle.sol";
 import {IRMTestDefault} from "evk-test/mocks/IRMTestDefault.sol";
 import {IHookTarget} from "evk/interfaces/IHookTarget.sol";
 import {SequenceRegistry} from "evk/SequenceRegistry/SequenceRegistry.sol";
-
-// Euler swap
-
-import {TestERC20} from "evk-test/unit/evault/EVaultTestBase.t.sol";
-import {IEVault} from "evk/EVault/IEVault.sol";
-import {IEulerSwap, IEVC, EulerSwap} from "euler-swap/EulerSwap.sol";
-import {EulerSwapFactory} from "euler-swap/EulerSwapFactory.sol";
-import {EulerSwapPeriphery} from "euler-swap/EulerSwapPeriphery.sol";
-import {PoolManagerDeployer} from "euler-swap/../test/utils/PoolManagerDeployer.sol";
-
-// Maglev stuff
-
-import {MaglevLens} from "src/MaglevLens.sol";
 
 struct Asset {
     string symbol;
@@ -83,6 +71,7 @@ contract DeployScenario is Script {
     address permit2;
     address sequenceRegistry;
     GenericFactory public factory;
+    EulerRouterFactory routerFactory;
 
     Base.Integrations integrations;
     Dispatch.DeployedModules modules;
@@ -118,24 +107,11 @@ contract DeployScenario is Script {
     TestERC20 assetUSDZ;
     IEVault eUSDZ;
 
-    //////// EulerSwap
-
-    address poolManager;
-    address eulerSwapImpl;
-    EulerSwapFactory eulerSwapFactory;
-    EulerSwapPeriphery eulerSwapPeriphery;
-
-    //////// Maglev
-
-    MaglevLens maglevLens;
-
     function run() public {
         vm.startBroadcast(user3PK);
 
         deployEulerSystem();
         deployAssets();
-        deployEulerSwap();
-        deployMaglevLens();
 
         vm.stopBroadcast();
 
@@ -148,9 +124,11 @@ contract DeployScenario is Script {
         admin = makeAddr("admin");
         feeReceiver = makeAddr("feeReceiver");
         protocolFeeReceiver = makeAddr("protocolFeeReceiver");
-        factory = new GenericFactory(user3);
 
         evc = new EthereumVaultConnector();
+        factory = new GenericFactory(user3);
+        routerFactory = new EulerRouterFactory(address(evc));
+
         protocolConfig = new ProtocolConfig(admin, protocolFeeReceiver);
         balanceTracker = address(new MockBalanceTracker());
         oracle = new MockPriceOracle();
@@ -265,24 +243,6 @@ contract DeployScenario is Script {
 
             vm.writeLine(pricesFile, "}");
         }
-    }
-
-    function deployEulerSwap() internal {
-        poolManager = address(PoolManagerDeployer.deploy(address(0)));
-        eulerSwapImpl = address(new EulerSwap(address(evc), poolManager));
-        eulerSwapFactory = new EulerSwapFactory(address(evc), address(factory), eulerSwapImpl, address(0), address(0));
-        eulerSwapPeriphery = new EulerSwapPeriphery();
-
-        string memory result = vm.serializeAddress("eulerSwap", "eulerSwapFactory", address(eulerSwapFactory));
-        result = vm.serializeAddress("eulerSwap", "eulerSwapPeriphery", address(eulerSwapPeriphery));
-        vm.writeJson(result, "./dev-ctx/addresses/31337/EulerSwapAddresses.json");
-    }
-
-    function deployMaglevLens() internal {
-        maglevLens = new MaglevLens();
-
-        string memory result = vm.serializeAddress("maglev", "maglevLens", address(maglevLens));
-        vm.writeJson(result, "./dev-ctx/addresses/31337/MaglevAddresses.json");
     }
 
     function getSubaccount(address user, uint8 account) internal pure returns (address) {
