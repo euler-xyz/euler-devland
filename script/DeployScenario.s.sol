@@ -39,6 +39,7 @@ import {SequenceRegistry} from "evk/SequenceRegistry/SequenceRegistry.sol";
 
 struct Asset {
     string symbol;
+    uint8 decimals;
     address asset;
     address vault;
     string price;
@@ -174,6 +175,7 @@ contract DeployScenario is Script {
         Asset memory a;
 
         a.symbol = symbol;
+        a.decimals = decimals;
         a.asset = address(new TestERC20(string(abi.encodePacked(symbol, " Token")), symbol, decimals, false));
         a.vault = factory.createProxy(address(0), true, abi.encodePacked(a.asset, address(oracle), unitOfAccount));
         a.price = price;
@@ -242,6 +244,37 @@ contract DeployScenario is Script {
             }
 
             vm.writeLine(pricesFile, "}");
+        }
+
+        {
+            string memory tokenListFile = "./dev-ctx/tokenlist/31337/tokenList.json";
+            vm.writeLine(tokenListFile, "[");
+
+            for (uint256 i; i < assets.length; ++i) {
+                vm.writeLine(tokenListFile, "  {");
+
+                vm.writeLine(tokenListFile, "    \"chainId\": 31337,");
+                vm.writeLine(tokenListFile, string(abi.encodePacked("    \"address\": \"", vm.toString(assets[i].asset), "\",")));
+                vm.writeLine(tokenListFile, string(abi.encodePacked("    \"symbol\": \"", assets[i].symbol, "\",")));
+                vm.writeLine(tokenListFile, string(abi.encodePacked("    \"decimals\": ", vm.toString(assets[i].decimals))));
+
+                vm.writeLine(tokenListFile, string(abi.encodePacked("  }", (i == assets.length - 1 ? "" : ","))));
+                /*
+                string memory line = string(
+                    abi.encodePacked(
+                        "\"",
+                        vm.toString(assets[i].asset),
+                        "\": {\"price\":",
+                        assets[i].price,
+                        "}",
+                        (i == assets.length - 1 ? "" : ",")
+                    )
+                );
+                vm.writeLine(pricesFile, line);
+                */
+            }
+
+            vm.writeLine(tokenListFile, "]");
         }
     }
 
