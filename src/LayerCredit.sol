@@ -16,9 +16,10 @@ contract LayerCredit is EVCUtil {
     IEulerRouterFactory immutable private routerFactory;
     StubOracle immutable private stubOracle;
 
+    uint256 private constant MAX_COLLATERALS = 3;
+
     address public settingAdmin;
-    uint16 public settingMaxCollaterals = 3; // Special value of 0 means system sunset (no new bond creation allowed)
-    uint40 public settingMaxTermDuration = 90 days;
+    uint40 public settingMaxTermDuration = 90 days; // Special value of 0 means system sunset (no new bond creation allowed)
     uint40 public settingReserveMultiplier = 20e4; // 1e4 scale
     uint80 public settingSettlementInterestRate = 21964959992727444861; // 100% APY
 
@@ -56,22 +57,21 @@ contract LayerCredit is EVCUtil {
     }
 
 
-    struct BondStorage {
-        address vault;
-        uint40 bondId;
-        uint16 state; // 0 = active, 1 = soft settlement, 2 = hard settlement, 3 = dead
+    struct BondState {
+        uint8 state; // 0 = none, 1 = active, 2 = soft settlement, 3 = hard settlement, 4 = inactive
         uint40 termEnd;
         uint40 termStart;
         address restrictedLender;
         address restrictedBorrower;
+        uint64 earlyRepayPenalty;
         uint40 reserveMultiplier; // 1e4 scale
         uint80 settlementInterestRate;
     }
 
-    mapping(address vault => BondStorage) private bondsByVault;
-    mapping(uint256 bondId => address vault) private bondsById;
-    uint256 private nextBondId = 1;
+    mapping(address vault => BondState) private bondsByVault;
     EnumerableSet.AddressSet private activeBonds;
+    EnumerableSet.AddressSet private settlingBonds;
+    address[] private inactiveBonds;
 
     mapping(address vault => mapping(address who => uint256 shares)) reservedShares;
 
@@ -79,14 +79,16 @@ contract LayerCredit is EVCUtil {
     error SystemSunset();
     error InvalidTermDuration();
     error InvalidNumberOfCollaterals();
-    error InvalidLTVIndex();
+    error InvalidAsset();
+    error InvalidLTV();
     error VaultNotEVCCompatible();
+    error InvalidEarlyRepayPenalty();
 
     function deployBond(DeployBondParams memory p) external returns (address) {
-        require(settingMaxCollaterals != 0, SystemSunset());
+        require(settingMaxTermDuration != 0, SystemSunset());
         require(p.termDuration <= settingMaxTermDuration, InvalidTermDuration());
-
-        require(p.collaterals.length >= 1 && p.collaterals.length <= settingMaxCollaterals, InvalidNumberOfCollaterals());
+        require(p.collaterals.length >= 1 && p.collaterals.length <= MAX_COLLATERALS, InvalidNumberOfCollaterals());
+        require(p.earlyRepayPenalty <= 1e18, InvalidEarlyRepayPenalty());
 
         IEulerRouter router = IEulerRouter(IEulerRouterFactory(routerFactory).deploy(address(this)));
 
@@ -100,6 +102,8 @@ contract LayerCredit is EVCUtil {
         vault.setLiquidationCoolOffTime(1);
 
         for (uint256 i = 0; i < p.collaterals.length; i++) {
+            require(p.collaterals[i].asset != address(0), InvalidAsset());
+
             IEVault collateralVault;
 
             if (p.collaterals[i].isExternalVault) {
@@ -111,30 +115,29 @@ contract LayerCredit is EVCUtil {
 
             router.govSetResolvedVault(address(vault), true);
 
+            uint16 liqLTV = p.collaterals[i].liquidationLTV;
+            require(liqLTV > 0.1e4, InvalidLTV());
+
             router.govSetConfig(collateralVault.asset(), p.unitOfAccount, address(stubOracle));
-            vault.setLTV(address(collateralVault), uint16(p.collaterals[i].liquidationLTV * 0.98e18 / 1e18), p.collaterals[i].liquidationLTV, 0);
+            vault.setLTV(address(collateralVault), uint16(liqLTV * 0.98e18 / 1e18), liqLTV, 0);
             router.govSetConfig(collateralVault.asset(), p.unitOfAccount, p.collaterals[i].oracle);
         }
 
         router.transferGovernance(address(0));
         vault.setGovernorAdmin(address(0));
 
-        bondsByVault[address(vault)] = BondStorage({
-            vault: address(vault),
-            bondId: uint40(nextBondId),
+        bondsByVault[address(vault)] = BondState({
+            state: 1,
             termEnd: uint40(block.timestamp + p.termDuration),
             termStart: uint40(block.timestamp),
             restrictedLender: p.restrictedLender,
             restrictedBorrower: p.restrictedBorrower,
+            earlyRepayPenalty: p.earlyRepayPenalty,
             reserveMultiplier: settingReserveMultiplier,
             settlementInterestRate: settingSettlementInterestRate
         });
 
-        bondsById[nextBondId] = address(vault);
-
         activeBonds.add(address(vault));
-
-        nextBondId++;
 
         return address(vault);
     }
@@ -148,5 +151,29 @@ contract LayerCredit is EVCUtil {
         newEscrow.setGovernorAdmin(address(0));
 
         return newEscrow;
+    }
+
+    function getBond(address bond) external view returns (BondState memory) {
+        return bondsByVault[bond];
+    }
+
+    function getActiveBonds(uint256 start, uint256 end) external view returns (address[] memory) {
+        return getSlice(activeBonds, start, end);
+    }
+
+
+    error SliceOutOfBounds();
+
+    function getSlice(EnumerableSet.AddressSet storage arr, uint256 start, uint256 end) internal view returns (address[] memory) {
+        uint256 length = arr.length();
+        if (end == type(uint256).max) end = length;
+        if (end < start || end > length) revert SliceOutOfBounds();
+
+        address[] memory slice = new address[](end - start);
+        for (uint256 i; i < end - start; ++i) {
+            slice[i] = arr.at(start + i);
+        }
+
+        return slice;
     }
 }
