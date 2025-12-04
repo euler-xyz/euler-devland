@@ -20,6 +20,7 @@ contract LayerCredit is EVCUtil {
 
     address public settingAdmin;
     uint40 public settingMaxTermDuration = 90 days; // Special value of 0 means system sunset (no new bond creation allowed)
+    uint16 public settingInterestFee = 0.1e4;
     uint40 public settingReserveMultiplier = 20e4; // 1e4 scale
     uint80 public settingSettlementInterestRate = 21964959992727444861; // 100% APY
 
@@ -43,10 +44,10 @@ contract LayerCredit is EVCUtil {
     struct DeployBondParams {
         address asset;
         address unitOfAccount;
+        address oracle;
         uint256 termDuration;
 
         uint80 interestRate;
-        uint16 interestFee;
         address interestFeeReceiver;
 
         address restrictedLender;
@@ -95,11 +96,14 @@ contract LayerCredit is EVCUtil {
         IEVault vault = IEVault(GenericFactory(eVaultFactory).createProxy(address(0), true, abi.encodePacked(p.asset, address(router), p.unitOfAccount)));
 
         vault.setInterestRateModel(address(this));
-        vault.setInterestFee(p.interestFee);
+        vault.setInterestFee(settingInterestFee);
         vault.setFeeReceiver(p.interestFeeReceiver);
         vault.setHookConfig(address(this), OP_CONVERT_FEES | OP_BORROW | OP_REPAY | OP_REPAY_WITH_SHARES | OP_DEPOSIT | OP_MINT | OP_SKIM | OP_WITHDRAW | OP_REDEEM);
         vault.setMaxLiquidationDiscount(0.15e4);
         vault.setLiquidationCoolOffTime(1);
+
+        router.govSetResolvedVault(address(vault), true);
+        router.govSetConfig(p.asset, p.unitOfAccount, p.oracle);
 
         for (uint256 i = 0; i < p.collaterals.length; i++) {
             require(p.collaterals[i].asset != address(0), InvalidAsset());
@@ -113,7 +117,7 @@ contract LayerCredit is EVCUtil {
                 collateralVault = getEscrowVault(p.collaterals[i].asset);
             }
 
-            router.govSetResolvedVault(address(vault), true);
+            router.govSetResolvedVault(address(collateralVault), true);
 
             uint16 liqLTV = p.collaterals[i].liquidationLTV;
             require(liqLTV > 0.1e4, InvalidLTV());
