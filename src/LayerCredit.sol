@@ -36,9 +36,8 @@ contract LayerCredit is EVCUtil {
 
     struct DeployBondCollateral {
         address asset;
-        bool isExternalVault;
-        uint16 liquidationLTV;
         address oracle;
+        uint16 liquidationLTV;
     }
 
     struct DeployBondParams {
@@ -82,7 +81,6 @@ contract LayerCredit is EVCUtil {
     error InvalidNumberOfCollaterals();
     error InvalidAsset();
     error InvalidLTV();
-    error VaultNotEVCCompatible();
     error InvalidEarlyRepayPenalty();
 
     function deployBond(DeployBondParams memory p) external returns (address) {
@@ -110,9 +108,8 @@ contract LayerCredit is EVCUtil {
 
             IEVault collateralVault;
 
-            if (p.collaterals[i].isExternalVault) {
+            if (eVaultFactory.isProxy(address(collateralVault))) {
                 collateralVault = IEVault(p.collaterals[i].asset);
-                require(collateralVault.EVC() == address(evc), VaultNotEVCCompatible());
             } else {
                 collateralVault = getEscrowVault(p.collaterals[i].asset);
             }
@@ -123,7 +120,7 @@ contract LayerCredit is EVCUtil {
             require(liqLTV > 0.1e4, InvalidLTV());
 
             router.govSetConfig(collateralVault.asset(), p.unitOfAccount, address(stubOracle));
-            vault.setLTV(address(collateralVault), uint16(liqLTV * 0.98e18 / 1e18), liqLTV, 0);
+            vault.setLTV(address(collateralVault), uint16(uint256(liqLTV) * 0.98e18 / 1e18), liqLTV, 0);
             router.govSetConfig(collateralVault.asset(), p.unitOfAccount, p.collaterals[i].oracle);
         }
 
@@ -179,5 +176,25 @@ contract LayerCredit is EVCUtil {
         }
 
         return slice;
+    }
+
+
+
+
+
+
+
+    function computeInterestRate(address vault, uint256 cash, uint256 borrows) external view returns (uint256) {
+        return computeInterestRateView(vault, cash, borrows);
+    }
+
+    function computeInterestRateView(address vault, uint256 cash, uint256 borrows) public view returns (uint256) {
+        return 0;
+    }
+
+
+    function isHookTarget() external view returns (bytes4) {
+        if (eVaultFactory.isProxy(msg.sender)) return this.isHookTarget.selector;
+        else return 0;
     }
 }

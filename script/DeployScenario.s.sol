@@ -133,7 +133,7 @@ contract DeployScenario is Script {
         protocolConfig = new ProtocolConfig(admin, protocolFeeReceiver);
         balanceTracker = address(new MockBalanceTracker());
         oracle = new MockPriceOracle();
-        unitOfAccount = address(1);
+        unitOfAccount = address(840);
         permit2 = address(0);
         sequenceRegistry = address(new SequenceRegistry());
         integrations =
@@ -199,6 +199,7 @@ contract DeployScenario is Script {
         (assetUSDZ, eUSDZ) = genAsset("USDZ", 6, "1.00081", 1e18 * 1e12);
 
         for (uint256 i; i < assets.length; ++i) {
+            oracle.setPrice(assets[i].asset, unitOfAccount, assets[i].priceNum);
             oracle.setPrice(assets[i].vault, unitOfAccount, assets[i].priceNum);
 
             for (uint256 j; j < assets.length; ++j) {
@@ -223,6 +224,11 @@ contract DeployScenario is Script {
             string memory result = vm.serializeAddress("products", "vaults", vaults);
             string memory obj = vm.serializeString("products2", "testing-product", result);
             vm.writeJson(obj, "./dev-ctx/labels/31337/products.json");
+        }
+
+        {
+            string memory result = vm.serializeAddress("misc", "oracle", address(oracle));
+            vm.writeJson(result, "./dev-ctx/misc/31337/misc.json");
         }
 
         {
