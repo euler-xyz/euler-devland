@@ -15,7 +15,9 @@ contract LayerCreditLens {
     //   flags(col0External, col1External, col2External), col0, col1[0:8]
     // word3: 12 + 20
     //   col1[8:20], col2
-    function genCompressedBond(address layerCredit, address bond) internal view returns (uint256 w0, uint256 w1, uint256 w2, uint256 w3) {
+    // word4: 20
+    //   asset
+    function genCompressedBond(address layerCredit, address bond) internal view returns (uint256 w0, uint256 w1, uint256 w2, uint256 w3, uint256 w4) {
         unchecked {
             LayerCredit.BondState memory b = LayerCredit(layerCredit).getBond(bond);
 
@@ -31,7 +33,7 @@ contract LayerCreditLens {
                 w0 = (w0 << 40) | b.termStart;
             }
 
-            if (b.state == 0) return (w0, w1, w2, w3);
+            if (b.state == 0) return (w0, w1, w2, w3, w4);
 
             IEVault v = IEVault(bond);
 
@@ -58,33 +60,38 @@ contract LayerCreditLens {
 
                 if (ltvs.length >= 1) {
                     if (isEscrow(layerCredit, ltvs[0])) collateralFlags |= 4;
-                    w2 |= uint256(uint160(ltvs[0])) << (8*8);
+                    address col0 = IEVault(ltvs[0]).asset();
+                    w2 |= uint256(uint160(col0)) << (8*8);
                 }
 
                 if (ltvs.length >= 2) {
                     if (isEscrow(layerCredit, ltvs[1])) collateralFlags |= 2;
-                    w2 |= uint256(uint160(ltvs[1])) >> (12*8);
-                    w3 |= uint256(uint160(ltvs[1])) << (20*8);
+                    address col1 = IEVault(ltvs[1]).asset();
+                    w2 |= uint256(uint160(col1)) >> (12*8);
+                    w3 |= uint256(uint160(col1)) << (20*8);
                 }
 
                 if (ltvs.length >= 2) {
                     if (isEscrow(layerCredit, ltvs[2])) collateralFlags |= 1;
-                    w3 |= uint256(uint160(ltvs[2]));
+                    address col2 = IEVault(ltvs[2]).asset();
+                    w3 |= uint256(uint160(col2));
                 }
 
                 w2 |= collateralFlags << (28*8);
             }
+
+            w4 = uint256(uint160(v.asset()));
         }
     }
 
     function getAllActiveBonds(address layerCredit) external view returns (uint256[] memory output) {
         address[] memory bonds = LayerCredit(layerCredit).getActiveBonds(0, type(uint256).max);
-        output = new uint256[](bonds.length * 4);
+        output = new uint256[](bonds.length * 5);
 
         uint256 offset;
         for (uint256 i; i < bonds.length; ++i) {
-            (output[offset], output[offset+1], output[offset+2], output[offset+3]) = genCompressedBond(layerCredit, bonds[i]);
-            offset += 4;
+            (output[offset], output[offset+1], output[offset+2], output[offset+3], output[offset+4]) = genCompressedBond(layerCredit, bonds[i]);
+            offset += 5;
         }
     }
 
