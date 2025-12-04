@@ -58,18 +58,18 @@ contract LayerCreditLens {
 
                 if (ltvs.length >= 1) {
                     if (isEscrow(layerCredit, ltvs[0])) collateralFlags |= 4;
-                    w2 |= uint160(ltvs[0]) << (8*8);
+                    w2 |= uint256(uint160(ltvs[0])) << (8*8);
                 }
 
                 if (ltvs.length >= 2) {
                     if (isEscrow(layerCredit, ltvs[1])) collateralFlags |= 2;
-                    w2 |= uint160(ltvs[1]) >> (12*8);
-                    w3 |= uint160(ltvs[1]) << (20*8);
+                    w2 |= uint256(uint160(ltvs[1])) >> (12*8);
+                    w3 |= uint256(uint160(ltvs[1])) << (20*8);
                 }
 
                 if (ltvs.length >= 2) {
                     if (isEscrow(layerCredit, ltvs[2])) collateralFlags |= 1;
-                    w3 |= uint160(ltvs[2]);
+                    w3 |= uint256(uint160(ltvs[2]));
                 }
 
                 w2 |= collateralFlags << (28*8);

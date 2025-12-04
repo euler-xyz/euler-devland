@@ -99,6 +99,7 @@ contract LayerCredit is EVCUtil {
         vault.setHookConfig(address(this), OP_CONVERT_FEES | OP_BORROW | OP_REPAY | OP_REPAY_WITH_SHARES | OP_DEPOSIT | OP_MINT | OP_SKIM | OP_WITHDRAW | OP_REDEEM);
         vault.setMaxLiquidationDiscount(0.15e4);
         vault.setLiquidationCoolOffTime(1);
+        vault.setCaps(2, 0); // supplyCap is 0, borrowCap is unlimited
 
         router.govSetResolvedVault(address(vault), true);
         router.govSetConfig(p.asset, p.unitOfAccount, p.oracle);
