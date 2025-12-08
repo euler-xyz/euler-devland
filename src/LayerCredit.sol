@@ -2,15 +2,19 @@
 pragma solidity ^0.8.27;
 
 import {EnumerableSet} from "openzeppelin-contracts/utils/structs/EnumerableSet.sol";
+import {SafeERC20, IERC20} from "openzeppelin-contracts/token/ERC20/utils/SafeERC20.sol";
 import {EVCUtil} from "evc/utils/EVCUtil.sol";
-import {IEVault, IERC20} from "evk/EVault/IEVault.sol";
+import {IEVault} from "evk/EVault/IEVault.sol";
 import "evk/EVault/shared/Constants.sol";
 import {GenericFactory} from "evk/GenericFactory/GenericFactory.sol";
 import {IEulerRouterFactory, IEulerRouter} from "./interfaces/Misc.sol";
 import {StubOracle} from "./StubOracle.sol";
+import "./DFloat16.sol";
 
 contract LayerCredit is EVCUtil {
     using EnumerableSet for EnumerableSet.AddressSet;
+    using SafeERC20 for IERC20;
+    using DFloat16 for uint256;
 
     GenericFactory immutable private eVaultFactory;
     IEulerRouterFactory immutable private routerFactory;
@@ -57,15 +61,23 @@ contract LayerCredit is EVCUtil {
     }
 
 
+    uint8 internal constant BOND_STATE_ACTIVE = 1;
+    uint8 internal constant BOND_STATE_SOFT_SETTLEMENT = 2;
+    uint8 internal constant BOND_STATE_HARD_SETTLEMENT = 3;
+    uint8 internal constant BOND_STATE_FINAL = 4;
+
+    // FIXME: pack this
     struct BondState {
-        uint8 state; // 0 = none, 1 = active, 2 = soft settlement, 3 = hard settlement, 4 = inactive
+        uint8 state;
         uint40 termEnd;
         uint40 termStart;
         address restrictedLender;
         address restrictedBorrower;
         uint64 earlyRepayPenalty;
+        uint80 interestRate;
         uint40 reserveMultiplier; // 1e4 scale
         uint80 settlementInterestRate;
+        uint40 nextTransitionTime;
     }
 
     mapping(address vault => BondState) private bondsByVault;
@@ -73,15 +85,20 @@ contract LayerCredit is EVCUtil {
     EnumerableSet.AddressSet private settlingBonds;
     address[] private inactiveBonds;
 
-    mapping(address vault => mapping(address who => uint256 shares)) reservedShares;
+    mapping(address vault => mapping(address who => uint256 shares)) public reservedShares;
+    mapping(address vault => uint256) public totalReservedShares;
 
 
     error SystemSunset();
+    error UnknownVault();
     error InvalidTermDuration();
     error InvalidNumberOfCollaterals();
     error InvalidAsset();
     error InvalidLTV();
     error InvalidEarlyRepayPenalty();
+    error InvalidVaultState();
+    error InsufficientShares();
+    error InsufficientReservedShares();
 
     function deployBond(DeployBondParams memory p) external returns (address) {
         require(settingMaxTermDuration != 0, SystemSunset());
@@ -90,13 +107,33 @@ contract LayerCredit is EVCUtil {
         require(p.earlyRepayPenalty <= 1e18, InvalidEarlyRepayPenalty());
 
         IEulerRouter router = IEulerRouter(IEulerRouterFactory(routerFactory).deploy(address(this)));
-
         IEVault vault = IEVault(GenericFactory(eVaultFactory).createProxy(address(0), true, abi.encodePacked(p.asset, address(router), p.unitOfAccount)));
+
+        // Install Storage
+
+        uint40 termEnd = uint40(block.timestamp + p.termDuration);
+
+        bondsByVault[address(vault)] = BondState({
+            state: BOND_STATE_ACTIVE,
+            termEnd: termEnd,
+            termStart: uint40(block.timestamp),
+            restrictedLender: p.restrictedLender,
+            restrictedBorrower: p.restrictedBorrower,
+            earlyRepayPenalty: p.earlyRepayPenalty,
+            interestRate: p.interestRate,
+            reserveMultiplier: settingReserveMultiplier,
+            settlementInterestRate: settingSettlementInterestRate,
+            nextTransitionTime: termEnd
+        });
+
+        activeBonds.add(address(vault));
+
+        // Configure vault
 
         vault.setInterestRateModel(address(this));
         vault.setInterestFee(settingInterestFee);
         vault.setFeeReceiver(p.interestFeeReceiver);
-        vault.setHookConfig(address(this), OP_CONVERT_FEES | OP_BORROW | OP_REPAY | OP_REPAY_WITH_SHARES | OP_DEPOSIT | OP_MINT | OP_SKIM | OP_WITHDRAW | OP_REDEEM);
+        vault.setHookConfig(address(this), OP_DEPOSIT | OP_MINT | OP_SKIM | OP_WITHDRAW | OP_REDEEM | OP_TRANSFER | OP_BORROW | OP_REPAY | OP_REPAY_WITH_SHARES | OP_PULL_DEBT | OP_CONVERT_FEES | OP_LIQUIDATE | OP_TOUCH);
         vault.setMaxLiquidationDiscount(0.15e4);
         vault.setLiquidationCoolOffTime(1);
         vault.setCaps(2, 0); // supplyCap is 0, borrowCap is unlimited
@@ -125,24 +162,96 @@ contract LayerCredit is EVCUtil {
             router.govSetConfig(collateralVault.asset(), p.unitOfAccount, p.collaterals[i].oracle);
         }
 
+        // Renounce all governorship
+
         router.transferGovernance(address(0));
         vault.setGovernorAdmin(address(0));
 
-        bondsByVault[address(vault)] = BondState({
-            state: 1,
-            termEnd: uint40(block.timestamp + p.termDuration),
-            termStart: uint40(block.timestamp),
-            restrictedLender: p.restrictedLender,
-            restrictedBorrower: p.restrictedBorrower,
-            earlyRepayPenalty: p.earlyRepayPenalty,
-            reserveMultiplier: settingReserveMultiplier,
-            settlementInterestRate: settingSettlementInterestRate
-        });
-
-        activeBonds.add(address(vault));
-
         return address(vault);
     }
+
+
+
+    function _transition(address vault) internal {
+        BondState storage b = bondsByVault[vault];
+        uint8 state = b.state;
+        require(state != 0, UnknownVault());
+
+        if (block.timestamp < b.nextTransitionTime) return;
+
+        if (state == BOND_STATE_ACTIVE) {
+            IEVault(vault).setCaps(2, 2); // zero out both caps
+
+            address[] memory collaterals = IEVault(vault).LTVList();
+
+            for (uint256 i = 0; i < collaterals.length; ++i) {
+                IEVault(vault).setLTV(collaterals[i], 0, IEVault(vault).LTVLiquidation(collaterals[i]), 0);
+            }
+
+            b.nextTransitionTime = uint40(block.timestamp + 3 days);
+            b.state = BOND_STATE_SOFT_SETTLEMENT;
+        } else if (state == BOND_STATE_SOFT_SETTLEMENT) {
+            address[] memory collaterals = IEVault(vault).LTVList();
+
+            for (uint256 i = 0; i < collaterals.length; ++i) {
+                IEVault(vault).setLTV(collaterals[i], 0, 0, 3 days);
+            }
+
+            b.nextTransitionTime = uint40(block.timestamp + 3 days);
+            b.state = BOND_STATE_HARD_SETTLEMENT;
+        } else if (state == BOND_STATE_HARD_SETTLEMENT) {
+            b.state = BOND_STATE_FINAL;
+        }
+    }
+
+
+
+
+    function reserve(address bond, uint256 amount, address receiver) external returns (uint256 shares) { // FIXME nonReentrant
+        uint8 state = bondsByVault[bond].state;
+        require(state != 0, UnknownVault());
+        require(state == BOND_STATE_ACTIVE, InvalidVaultState());
+
+        IERC20(IEVault(bond).asset()).safeTransferFrom(_msgSender(), bond, amount);
+        shares = IEVault(bond).skim(amount, address(this));
+
+        reservedShares[bond][receiver] += shares;
+        totalReservedShares[bond] += shares;
+        adjustSupplyCap(bond);
+    }
+
+    function unreserve(address bond, uint256 shares, address receiver) external returns (uint256 assets) { // FIXME nonReentrant
+        uint8 state = bondsByVault[bond].state;
+        require(state != 0, UnknownVault());
+
+        require(reservedShares[bond][_msgSender()] >= shares, InsufficientShares());
+
+        reservedShares[bond][_msgSender()] -= shares;
+        totalReservedShares[bond] -= shares;
+
+        assets = IEVault(bond).redeem(shares, receiver, address(this));
+
+        if (state != BOND_STATE_FINAL) {
+            // Except when final, reserved shares can only be removed if they aren't covering any senior shares
+            uint256 unreservedShares = IEVault(bond).totalSupply() - totalReservedShares[bond];
+            require(totalReservedShares[bond] >= unreservedShares, InsufficientReservedShares());
+
+            if (state == BOND_STATE_ACTIVE) adjustSupplyCap(bond);
+        }
+    }
+
+    function adjustSupplyCap(address bond) internal {
+        uint256 newReserved = IEVault(bond).convertToAssets(totalReservedShares[bond]);
+        uint256 newCap = newReserved * bondsByVault[bond].reserveMultiplier / 1e4;
+
+        IEVault(bond).setCaps(newCap.to_dfloat16(), 0);
+    }
+
+
+
+
+
+
 
     function getEscrowVault(address asset) internal returns (IEVault) {
         if (escrowVaults[asset] != address(0)) return IEVault(escrowVaults[asset]);
@@ -189,13 +298,38 @@ contract LayerCredit is EVCUtil {
         return computeInterestRateView(vault, cash, borrows);
     }
 
-    function computeInterestRateView(address vault, uint256 cash, uint256 borrows) public view returns (uint256) {
-        return 0;
+    function computeInterestRateView(address vault, uint256, uint256) public view returns (uint256) {
+        BondState storage b = bondsByVault[vault];
+        uint8 state = b.state;
+        require(state != 0, UnknownVault());
+
+        if (state == 1) return b.interestRate;
+        else return b.settlementInterestRate;
     }
 
 
     function isHookTarget() external view returns (bytes4) {
-        if (eVaultFactory.isProxy(msg.sender)) return this.isHookTarget.selector;
-        else return 0;
+        require(bondsByVault[msg.sender].state != 0, UnknownVault());
+        return this.isHookTarget.selector;
+    }
+
+    /// @dev Extracts original msg.sender from trailing calldata. Can only be used within a hook invoked by a bond vault.
+    function _msgSenderHook() internal view returns (address msgSender) {
+        require(bondsByVault[msg.sender].state != 0, UnknownVault());
+
+        assembly {
+            msgSender := shr(96, calldataload(sub(calldatasize(), 20)))
+        }
+    }
+
+    // Purposes of hooks:
+    // * restricted lender/borrowers (including pullDebt)
+    // * reserves enforcement (including convertFees)
+    // * history tracking
+    // * state transitions: not possible because reentrancy?
+
+    // OP_DEPOSIT | OP_MINT | OP_SKIM | OP_WITHDRAW | OP_REDEEM | OP_TRANSFER | OP_BORROW | OP_REPAY | OP_REPAY_WITH_SHARES | OP_PULL_DEBT | OP_CONVERT_FEES | OP_LIQUIDATE | OP_TOUCH
+
+    function deposit(uint256 amount, address receiver) external {
     }
 }

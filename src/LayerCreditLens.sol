@@ -5,8 +5,11 @@ import {IEVC} from "evc/interfaces/IEthereumVaultConnector.sol";
 import {IEVault, IERC20} from "evk/EVault/IEVault.sol";
 import {RPow} from "evk/EVault/shared/lib/RPow.sol";
 import {LayerCredit} from "./LayerCredit.sol";
+import "./DFloat16.sol";
 
 contract LayerCreditLens {
+    using DFloat16 for uint256;
+
     // word0: 20 + 1 + 1 + 5 + 5
     //   vault, state, flags(restrictedLender, restrictedBorrower), termEnd, termStart
     // word1: 1 + 2 + 2 + 2 + 2 + 2 + 2
@@ -45,12 +48,12 @@ contract LayerCreditLens {
                 (uint16 supplyCap,) = v.caps();
 
                 w1 = v.decimals();
-                w1 = (w1 << 16) | dfloat16(cash);
-                w1 = (w1 << 16) | dfloat16(borrows);
+                w1 = (w1 << 16) | cash.to_dfloat16();
+                w1 = (w1 << 16) | borrows.to_dfloat16();
                 w1 = (w1 << 16) | supplyCap;
-                w1 = (w1 << 16) | dfloat16(supplyAPY);
-                w1 = (w1 << 16) | dfloat16(borrowAPY);
-                w1 = (w1 << 16) | dfloat16(b.earlyRepayPenalty);
+                w1 = (w1 << 16) | supplyAPY.to_dfloat16();
+                w1 = (w1 << 16) | borrowAPY.to_dfloat16();
+                w1 = (w1 << 16) | uint256(b.earlyRepayPenalty).to_dfloat16();
             }
 
             {
@@ -97,6 +100,40 @@ contract LayerCreditLens {
 
 
 
+    struct DetailedCollateralInfo {
+        address vault;
+        string symbol;
+        uint8 decimals;
+        address oracle;
+        uint256 cash;
+        uint256 borrows;
+        uint256 totalShares;
+        uint256 myShares;
+        uint256 myUnderlyingBalance;
+    }
+
+    struct DetailedBondInfo {
+        string symbol;
+        address oracle;
+        uint256 cash;
+        uint256 borrows;
+        uint256 totalShares;
+        uint256 myShares;
+        uint256 myUnderlyingBalance;
+        DetailedCollateralInfo[] collateral;
+    }
+
+    function getDetailedBondInfo(address layerCredit, address bond, address me) external view returns (uint256[5] memory comp, DetailedBondInfo memory info) {
+        (comp[0], comp[1], comp[2], comp[3], comp[4]) = genCompressedBond(layerCredit, bond);
+
+        info.symbol = IEVault(bond).symbol();
+        info.oracle = IEVault(bond).oracle();
+
+        info.myShares = IEVault(bond).balanceOf(me);
+    }
+
+
+
     function isEscrow(address layerCredit, address v) internal view returns (bool) {
         return LayerCredit(layerCredit).escrowVaults(IEVault(v).asset()) == v;
     }
@@ -122,24 +159,6 @@ contract LayerCreditLens {
 
             borrowAPY /= 1e18;
             supplyAPY /= 1e18;
-        }
-    }
-
-
-    error DFloat16Overflow();
-
-    function dfloat16(uint256 n) internal pure returns (uint16) {
-        unchecked {
-            uint256 exponent = 2;
-
-            while (n > 999) {
-                exponent++;
-                n /= 10;
-            }
-
-            require(exponent < 64, DFloat16Overflow());
-
-            return uint16((n << 6) | exponent);
         }
     }
 }
