@@ -23,7 +23,7 @@ contract LayerCredit is EVCUtil {
 
     GenericFactory immutable private eVaultFactory;
     IEulerRouterFactory immutable private routerFactory;
-    StubOracle immutable private stubOracle;
+    StubOracle immutable private stubOracle; // FIXME: do we want to support pull oracles?
 
     uint256 private constant MAX_COLLATERALS = 3;
 
@@ -300,6 +300,10 @@ contract LayerCredit is EVCUtil {
         return getSlice(activeBonds, start, end);
     }
 
+    function getSettlingBonds(uint256 start, uint256 end) external view returns (address[] memory) {
+        return getSlice(settlingBonds, start, end);
+    }
+
 
     error SliceOutOfBounds();
 
@@ -339,8 +343,8 @@ contract LayerCredit is EVCUtil {
 
 
 
-    uint64 historyLength;
-    uint40 nextHistEntityId = 1;
+    uint64 public historyLength;
+    uint40 private nextHistEntityId = 1;
     uint256[18446744073709551615] private history;
 
     struct HistEntity {
@@ -408,10 +412,41 @@ contract LayerCredit is EVCUtil {
         _addToHistory(action, bond, who, metadata, address(0));
     }
 
+    function getHistEntityLength(address entity) external view returns (uint256) {
+        return histEntities[histEntityLookup[entity]].nextIndexEntry;
+    }
+
+    function getHistoryGlobal(uint256 start, uint256 end) external view returns (uint256[] memory) {
+        if (end == type(uint256).max) end = historyLength;
+        if (end < start || end > historyLength) revert SliceOutOfBounds();
+
+        uint256[] memory slice = new uint256[](end - start);
+        for (uint256 i; i < end - start; ++i) {
+            slice[i] = history[start + i];
+        }
+
+        return slice;
+    }
+
+    function getHistoryForEntity(address entity, uint256 start, uint256 end) external view returns (uint256[] memory) {
+        HistEntity storage ent = histEntities[histEntityLookup[entity]];
+
+        if (end == type(uint256).max) end = ent.nextIndexEntry;
+        if (end < start || end > ent.nextIndexEntry) revert SliceOutOfBounds();
+
+        uint256[] memory slice = new uint256[](end - start);
+        for (uint256 i; i < end - start; ++i) {
+            slice[i] = history[ent.index[start + i]];
+        }
+
+        return slice;
+    }
 
 
 
-    function sameAccount(address a, address b) internal pure returns (bool) {
+
+
+    function isSameAccount(address a, address b) internal pure returns (bool) {
         return (uint160(a) >> 8) == (uint160(b) >> 8);
     }
 
@@ -420,12 +455,12 @@ contract LayerCredit is EVCUtil {
 
     function _enforceRestrictedLender(address bond, address msgSender) internal view {
         address restrictedLender = bondsByVault[bond].restrictedLender;
-        require(restrictedLender == address(0) || sameAccount(msgSender, restrictedLender), RestrictedLender());
+        require(restrictedLender == address(0) || isSameAccount(msgSender, restrictedLender), RestrictedLender());
     }
 
     function _enforceRestrictedBorrower(address bond, address msgSender) internal view {
         address restrictedBorrower = bondsByVault[bond].restrictedBorrower;
-        require(restrictedBorrower == address(0) || sameAccount(msgSender, restrictedBorrower), RestrictedBorrower());
+        require(restrictedBorrower == address(0) || isSameAccount(msgSender, restrictedBorrower), RestrictedBorrower());
     }
 
 
