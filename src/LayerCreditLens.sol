@@ -3,6 +3,7 @@ pragma solidity ^0.8.27;
 
 import {IEVC} from "evc/interfaces/IEthereumVaultConnector.sol";
 import {IEVault, IERC20} from "evk/EVault/IEVault.sol";
+import {EulerRouter} from "./vendor/EulerRouter/EulerRouter.sol";
 import {RPow} from "evk/EVault/shared/lib/RPow.sol";
 import {LayerCredit} from "./LayerCredit.sol";
 import "./DFloat16.sol";
@@ -106,32 +107,103 @@ contract LayerCreditLens {
         uint8 decimals;
         address oracle;
         uint256 cash;
-        uint256 borrows;
+        uint256 totalBorrows;
         uint256 totalShares;
-        uint256 myShares;
-        uint256 myUnderlyingBalance;
+        uint16 borrowLTV;
+        uint16 liquidationLTV;
     }
 
     struct DetailedBondInfo {
         string symbol;
         address oracle;
         uint256 cash;
-        uint256 borrows;
+        uint256 totalBorrows;
         uint256 totalShares;
-        uint256 myShares;
-        uint256 myUnderlyingBalance;
-        DetailedCollateralInfo[] collateral;
+        DetailedCollateralInfo[] collaterals;
     }
 
-    function getDetailedBondInfo(address layerCredit, address bond, address me) external view returns (uint256[5] memory comp, DetailedBondInfo memory info) {
+    function _resolveOracle(address bond, address asset) internal view returns (address oracle) {
+        (,,,oracle) = EulerRouter(IEVault(bond).oracle()).resolveOracle(1e18, asset, IEVault(bond).unitOfAccount());
+    }
+
+    function getDetailedBondInfo(address layerCredit, address bond) external view returns (uint256[5] memory comp, DetailedBondInfo memory info) {
         (comp[0], comp[1], comp[2], comp[3], comp[4]) = genCompressedBond(layerCredit, bond);
 
         info.symbol = IEVault(bond).symbol();
-        info.oracle = IEVault(bond).oracle();
+        info.oracle = _resolveOracle(bond, IEVault(bond).asset());
+        info.cash = IEVault(bond).cash();
+        info.totalBorrows = IEVault(bond).totalBorrows();
+        info.totalShares = IEVault(bond).totalSupply();
 
-        info.myShares = IEVault(bond).balanceOf(me);
+        address[] memory ltvs = IEVault(bond).LTVList();
+        info.collaterals = new DetailedCollateralInfo[](ltvs.length);
+
+        for (uint256 i = 0; i < ltvs.length; ++i) {
+            info.collaterals[i].vault = ltvs[i];
+            info.collaterals[i].decimals = IEVault(ltvs[i]).decimals();
+            info.collaterals[i].oracle = _resolveOracle(bond, IEVault(ltvs[i]).asset());
+            info.collaterals[i].cash = IEVault(ltvs[i]).cash();
+            info.collaterals[i].totalBorrows = IEVault(ltvs[i]).totalBorrows();
+            info.collaterals[i].totalShares = IEVault(ltvs[i]).totalSupply();
+
+            info.collaterals[i].borrowLTV = IEVault(bond).LTVBorrow(ltvs[i]);
+            info.collaterals[i].liquidationLTV = IEVault(bond).LTVLiquidation(ltvs[i]);
+        }
     }
 
+    struct MyBondBalancesInput {
+        address bond;
+        uint8 subAccountId;
+    }
+
+    struct MyBondBalancesCollateral {
+        uint256 myShares;
+        uint256 myUnderlyingBalance;
+        uint256 myApproval;
+    }
+
+    struct MyBondBalances {
+        uint256 myShares;
+        uint256 myDebt;
+        uint256 myReservedShares;
+        uint256 myUnderlyingBalance;
+        uint256 myApprovalVault;
+        uint256 myApprovalLayerCredit;
+
+        MyBondBalancesCollateral[] collaterals;
+    }
+
+    function getMyBondBalances(address layerCredit, MyBondBalancesInput[] memory inps, address mePrimary) external view returns (MyBondBalances[] memory bals) {
+        bals = new MyBondBalances[](inps.length);
+
+        for (uint256 i = 0; i < inps.length; ++i) {
+            address me = address(uint160(mePrimary) ^ uint160(inps[i].subAccountId));
+            address bond = inps[i].bond;
+
+            bals[i].myShares = IEVault(bond).balanceOf(me);
+            bals[i].myDebt = IEVault(bond).debtOf(me);
+            bals[i].myReservedShares = LayerCredit(layerCredit).reservedShares(bond, me);
+
+            IERC20 asset = IERC20(IEVault(bond).asset());
+
+            bals[i].myUnderlyingBalance = asset.balanceOf(mePrimary);
+            bals[i].myApprovalVault = asset.allowance(mePrimary, bond);
+            bals[i].myApprovalLayerCredit = asset.allowance(mePrimary, layerCredit);
+
+            address[] memory ltvs = IEVault(bond).LTVList();
+            bals[i].collaterals = new MyBondBalancesCollateral[](ltvs.length);
+
+            for (uint256 j = 0; j < ltvs.length; ++j) {
+                IERC20 colAsset = IERC20(IEVault(ltvs[j]).asset());
+
+                bals[i].collaterals[j] = MyBondBalancesCollateral({
+                    myShares: IEVault(ltvs[j]).balanceOf(me),
+                    myUnderlyingBalance: colAsset.balanceOf(mePrimary),
+                    myApproval: colAsset.allowance(mePrimary, ltvs[j])
+                });
+            }
+        }
+    }
 
 
     function isEscrow(address layerCredit, address v) internal view returns (bool) {
