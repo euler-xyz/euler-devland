@@ -345,15 +345,16 @@ contract LayerCredit is EVCUtil {
 
     uint64 public historyLength;
     uint40 private nextHistEntityId = 1;
-    uint256[18446744073709551615] private history;
+    uint256[9223372036854775807] private history;
 
     struct HistEntity {
+        address entity;
         uint64 nextIndexEntry;
-        uint64[18446744073709551615 - 2] index;
+        uint64[9223372036854775807] index;
     }
 
     mapping(uint40 id => HistEntity) private histEntities;
-    mapping(address vault => uint40 id) public histEntityLookup;
+    mapping(address entity => uint40 id) private histEntityLookup;
 
     uint8 internal constant HISTORY_ACTION_DEPOSIT = 1;
     uint8 internal constant HISTORY_ACTION_WITHDRAW = 2;
@@ -375,6 +376,7 @@ contract LayerCredit is EVCUtil {
         if (id != 0) return id;
 
         id = nextHistEntityId++;
+        histEntities[id].entity = a;
         histEntityLookup[a] = id;
     }
 
@@ -410,6 +412,10 @@ contract LayerCredit is EVCUtil {
 
     function _addToHistory(uint8 action, address bond, address who, uint256 metadata) internal {
         _addToHistory(action, bond, who, metadata, address(0));
+    }
+
+    function getHistEntityById(uint40 entityId) external view returns (address) {
+        return histEntities[entityId].entity;
     }
 
     function getHistEntityLength(address entity) external view returns (uint256) {
@@ -510,9 +516,10 @@ contract LayerCredit is EVCUtil {
     }
 
     function skim(uint256 amount, address receiver) external {
-        (address bond,) = hookInfo();
+        (address bond, address msgSender) = hookInfo();
         _enforceRestrictedLender(bond, receiver);
-        _addToHistory(HISTORY_ACTION_DEPOSIT, bond, receiver, amount.to_dfloat16());
+        // Avoid duplicate logs for reserve()
+        if (msgSender != address(this)) _addToHistory(HISTORY_ACTION_DEPOSIT, bond, receiver, amount.to_dfloat16());
     }
 
     function withdraw(uint256 amount, address, address owner) external {
@@ -521,8 +528,9 @@ contract LayerCredit is EVCUtil {
     }
 
     function redeem(uint256 shares, address, address owner) external {
-        (address bond,) = hookInfo();
-        _addToHistory(HISTORY_ACTION_WITHDRAW, bond, owner, IEVault(bond).convertToAssets(shares).to_dfloat16());
+        (address bond, address msgSender) = hookInfo();
+        // Avoid duplicate logs for unreserve()
+        if (msgSender != address(this)) _addToHistory(HISTORY_ACTION_WITHDRAW, bond, owner, IEVault(bond).convertToAssets(shares).to_dfloat16());
     }
 
     function _transferInternal(address bond, address from, address to, uint256 amount) internal {

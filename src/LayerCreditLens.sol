@@ -212,10 +212,38 @@ contract LayerCreditLens {
     }
 
 
+
+    struct HistoryEntry {
+        address bond;
+        address who;
+        uint256 raw;
+    }
+
+    function extractEntityId(uint256 r, uint256 byteOffset) internal pure returns (uint40) {
+        return uint40((r >> (byteOffset * 8)) & (type(uint40).max - 1));
+    }
+
+    function getHistoryForEntity(address layerCredit, address entity) external view returns (HistoryEntry[] memory entries) {
+        LayerCredit lc = LayerCredit(layerCredit);
+
+        uint256[] memory raw = lc.getHistoryForEntity(entity, 0, type(uint256).max);
+        entries = new HistoryEntry[](raw.length);
+
+        for (uint256 i = 0; i < raw.length; ++i) {
+            entries[i].bond = lc.getHistEntityById(extractEntityId(raw[i], 26));
+            entries[i].who = lc.getHistEntityById(extractEntityId(raw[i], 21));
+            entries[i].raw = raw[i];
+        }
+    }
+
+
+
+
+
+
     function isEscrow(address layerCredit, address v) internal view returns (bool) {
         return LayerCredit(layerCredit).escrowVaults(IEVault(v).asset()) == v;
     }
-
 
     uint256 internal constant SECONDS_PER_YEAR = 365.2425 * 86400;
 
