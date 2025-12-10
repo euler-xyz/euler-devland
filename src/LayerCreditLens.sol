@@ -220,7 +220,7 @@ contract LayerCreditLens {
     }
 
     function extractEntityId(uint256 r, uint256 byteOffset) internal pure returns (uint40) {
-        return uint40((r >> (byteOffset * 8)) & (type(uint40).max - 1));
+        return uint40((r >> (byteOffset * 8)) & type(uint40).max);
     }
 
     function getHistoryForEntity(address layerCredit, address entity) external view returns (HistoryEntry[] memory entries) {
