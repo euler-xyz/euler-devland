@@ -5,10 +5,10 @@ contract
   variable interest rates
   factor into multiple files, structured storage
   packing, code-size reduction
-  secondary market for bond shares
+  tests
   ? decide if we should support pull oracles or not (ie if StubOracle needed)
   ? when creating bonds, verify EVK impl hasn't changed since deployment
-  tests
+  ? separate contract: secondary market for bond shares
 
 docs
 

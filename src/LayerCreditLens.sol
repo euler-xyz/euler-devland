@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.27;
 
+import "forge-std/console.sol"; //FIXME
 import {IEVC} from "evc/interfaces/IEthereumVaultConnector.sol";
 import {IEVault, IERC20} from "evk/EVault/IEVault.sol";
 import {EulerRouter} from "./vendor/EulerRouter/EulerRouter.sol";
@@ -21,10 +22,8 @@ contract LayerCreditLens {
     //   col1[8:20], col2
     // word4: 20
     //   asset
-    function genCompressedBond(address layerCredit, address bond) internal view returns (uint256 w0, uint256 w1, uint256 w2, uint256 w3, uint256 w4) {
+    function genCompressedBond(address layerCredit, address bond, LayerCredit.BondState memory b) internal view returns (uint256 w0, uint256 w1, uint256 w2, uint256 w3, uint256 w4) {
         unchecked {
-            LayerCredit.BondState memory b = LayerCredit(layerCredit).getBond(bond);
-
             {
                 uint8 bondFlags;
                 if (b.restrictedLender != address(0)) bondFlags |= 2;
@@ -79,7 +78,7 @@ contract LayerCreditLens {
                     w3 |= uint256(uint160(col1)) << (20*8);
                 }
 
-                if (ltvs.length >= 2) {
+                if (ltvs.length >= 3) {
                     if (isEscrow(layerCredit, ltvs[2])) collateralFlags |= 1;
                     address col2 = IEVault(ltvs[2]).asset();
                     w3 |= uint256(uint160(col2));
@@ -98,7 +97,8 @@ contract LayerCreditLens {
 
         uint256 offset;
         for (uint256 i; i < bonds.length; ++i) {
-            (output[offset], output[offset+1], output[offset+2], output[offset+3], output[offset+4]) = genCompressedBond(layerCredit, bonds[i]);
+            LayerCredit.BondState memory b = LayerCredit(layerCredit).getBond(bonds[i]);
+            (output[offset], output[offset+1], output[offset+2], output[offset+3], output[offset+4]) = genCompressedBond(layerCredit, bonds[i], b);
             offset += 5;
         }
     }
@@ -124,6 +124,7 @@ contract LayerCreditLens {
         uint256 totalBorrows;
         uint256 totalShares;
         uint256 totalReservedShares;
+        uint40 nextTransitionTime;
         DetailedCollateralInfo[] collaterals;
     }
 
@@ -132,7 +133,8 @@ contract LayerCreditLens {
     }
 
     function getDetailedBondInfo(address layerCredit, address bond) external view returns (uint256[5] memory comp, DetailedBondInfo memory info) {
-        (comp[0], comp[1], comp[2], comp[3], comp[4]) = genCompressedBond(layerCredit, bond);
+        LayerCredit.BondState memory bondState = LayerCredit(layerCredit).getBond(bond);
+        (comp[0], comp[1], comp[2], comp[3], comp[4]) = genCompressedBond(layerCredit, bond, bondState);
 
         info.symbol = IEVault(bond).symbol();
         info.oracle = _resolveOracle(bond, IEVault(bond).asset());
@@ -140,18 +142,19 @@ contract LayerCreditLens {
         info.totalBorrows = IEVault(bond).totalBorrows();
         info.totalShares = IEVault(bond).totalSupply();
         info.totalReservedShares = LayerCredit(layerCredit).totalReservedShares(bond);
+        info.nextTransitionTime = bondState.nextTransitionTime;
 
         address[] memory ltvs = IEVault(bond).LTVList();
         info.collaterals = new DetailedCollateralInfo[](ltvs.length);
 
         for (uint256 i = 0; i < ltvs.length; ++i) {
             info.collaterals[i].vault = ltvs[i];
+            info.collaterals[i].symbol = IEVault(ltvs[i]).symbol();
             info.collaterals[i].decimals = IEVault(ltvs[i]).decimals();
             info.collaterals[i].oracle = _resolveOracle(bond, IEVault(ltvs[i]).asset());
             info.collaterals[i].cash = IEVault(ltvs[i]).cash();
             info.collaterals[i].totalBorrows = IEVault(ltvs[i]).totalBorrows();
             info.collaterals[i].totalShares = IEVault(ltvs[i]).totalSupply();
-
             info.collaterals[i].borrowLTV = IEVault(bond).LTVBorrow(ltvs[i]);
             info.collaterals[i].liquidationLTV = IEVault(bond).LTVLiquidation(ltvs[i]);
         }
