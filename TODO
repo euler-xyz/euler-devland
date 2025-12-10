@@ -1,10 +1,40 @@
-admin methods
-reserves
-hook operations
-early repay fees
-history
+contract
+  admin methods
+  collect early repay penalty
+    ? repay method in LayerCredit that pulls in repay amount+fee
+  variable interest rates
+  factor into multiple files, structured storage
+  packing, code-size reduction
+  secondary market for bond shares
+  ? decide if we should support pull oracles or not (ie if StubOracle needed)
+  ? when creating bonds, verify EVK impl hasn't changed since deployment
+  tests
 
-lens
+docs
+
 UI
-
-news items at bottom of homepage
+  borrow/lend tabs
+    filtering/sorting
+  bond page
+    bond details
+    my balances
+    actions
+      deposit/withdraw
+      reserve/unreserve
+      borrow/repay
+      add/remove collateral
+      touch/transition
+    history
+  my account screen
+    history
+  suppliers/borrowers screen
+    liquidate button
+  settings screen
+    add custom tokens
+  token pricing
+  subaccount selector
+  command filtering
+  url parameters
+  detect when wallet not connected, disable buttons etc
+  news items at bottom of homepage
+  spy mode

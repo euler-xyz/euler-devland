@@ -235,6 +235,8 @@ contract LayerCredit is EVCUtil {
         require(state != 0, UnknownVault());
         require(state == BOND_STATE_ACTIVE, InvalidVaultState());
 
+        _enforceRestrictedLender(bond, receiver);
+
         IERC20(IEVault(bond).asset()).safeTransferFrom(_msgSender(), bond, amount);
         shares = IEVault(bond).skim(amount, address(this));
 
@@ -343,6 +345,9 @@ contract LayerCredit is EVCUtil {
 
 
 
+    // History layout:
+    // [action: 1] [bondId: 5] [whoId: 5] [timestamp: 5] [block: 5] [metadata: 11]
+
     uint64 public historyLength;
     uint40 private nextHistEntityId = 1;
     uint256[9223372036854775807] private history;
@@ -386,8 +391,6 @@ contract LayerCredit is EVCUtil {
         histEntities[entity].index[indexLoc] = histLoc;
     }
 
-    // History layout:
-    // [action: 1] [bondId: 5] [whoId: 5] [timestamp: 5] [block: 5] [metadata: 11]
     function _addToHistory(uint8 action, address bond, address who, uint256 metadata, address extra) internal {
         require(metadata < type(uint88).max, MetadataTooBig());
 
@@ -452,6 +455,7 @@ contract LayerCredit is EVCUtil {
 
 
 
+
     function isSameAccount(address a, address b) internal pure returns (bool) {
         return (uint160(a) >> 8) == (uint160(b) >> 8);
     }
@@ -459,14 +463,14 @@ contract LayerCredit is EVCUtil {
     error RestrictedLender();
     error RestrictedBorrower();
 
-    function _enforceRestrictedLender(address bond, address msgSender) internal view {
+    function _enforceRestrictedLender(address bond, address who) internal view {
         address restrictedLender = bondsByVault[bond].restrictedLender;
-        require(restrictedLender == address(0) || isSameAccount(msgSender, restrictedLender), RestrictedLender());
+        require(restrictedLender == address(0) || isSameAccount(who, restrictedLender), RestrictedLender());
     }
 
-    function _enforceRestrictedBorrower(address bond, address msgSender) internal view {
+    function _enforceRestrictedBorrower(address bond, address who) internal view {
         address restrictedBorrower = bondsByVault[bond].restrictedBorrower;
-        require(restrictedBorrower == address(0) || isSameAccount(msgSender, restrictedBorrower), RestrictedBorrower());
+        require(restrictedBorrower == address(0) || isSameAccount(who, restrictedBorrower), RestrictedBorrower());
     }
 
 
@@ -476,6 +480,11 @@ contract LayerCredit is EVCUtil {
 
 
 
+    // Purposes of hooks:
+    // * enforce restricted lender/borrowers (including pullDebt, but not transfers)
+    // * reserves enforcement (including convertFees)
+    // * history tracking
+    // * ensure operations can't happen after transition times
 
     function isHookTarget() external view returns (bytes4) {
         require(bondsByVault[msg.sender].state != 0, UnknownVault());
@@ -496,12 +505,6 @@ contract LayerCredit is EVCUtil {
 
         bond = msg.sender;
     }
-
-    // Purposes of hooks:
-    // * restricted lender/borrowers (including pullDebt)
-    // * reserves enforcement (including convertFees)
-    // * history tracking
-    // * ensure operations can't happen after transition times
 
     function deposit(uint256 amount, address receiver) external {
         (address bond,) = hookInfo();
@@ -562,12 +565,14 @@ contract LayerCredit is EVCUtil {
 
     function repay(uint256 amount, address receiver) external {
         (address bond,) = hookInfo();
+        // FIXME: collect early repay penalty
         _addToHistory(HISTORY_ACTION_REPAY, bond, receiver, amount.to_dfloat16());
     }
 
     function repayWithShares(uint256 amount, address receiver) external {
         (address bond, address msgSender) = hookInfo();
         uint16 amountCompressed = amount.to_dfloat16();
+        // FIXME: collect early repay penalty
         _addToHistory(HISTORY_ACTION_WITHDRAW, bond, msgSender, amountCompressed);
         _addToHistory(HISTORY_ACTION_REPAY, bond, receiver, amountCompressed);
     }
