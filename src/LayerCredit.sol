@@ -482,9 +482,8 @@ contract LayerCredit is EVCUtil {
 
     // Purposes of hooks:
     // * enforce restricted lender/borrowers (including pullDebt, but not transfers)
-    // * reserves enforcement (including convertFees)
-    // * history tracking
     // * ensure operations can't happen after transition times
+    // * history tracking
 
     function isHookTarget() external view returns (bytes4) {
         require(bondsByVault[msg.sender].state != 0, UnknownVault());
