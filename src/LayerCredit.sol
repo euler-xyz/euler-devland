@@ -114,7 +114,7 @@ contract LayerCredit is EVCUtil {
     error InvalidEarlyRepayPenalty();
     error InvalidVaultState();
     error InsufficientShares();
-    error InsufficientReservedShares();
+    error ReservedSharesLocked();
 
     function deployBond(DeployBondParams memory p) external nonReentrant returns (address) {
         require(settingMaxTermDuration != 0, SystemSunset());
@@ -261,8 +261,8 @@ contract LayerCredit is EVCUtil {
 
         if (state != BOND_STATE_FINAL) {
             // Except when final, reserved shares can only be removed if they aren't covering any senior shares
-            uint256 unreservedShares = IEVault(bond).totalSupply() - totalReservedShares[bond];
-            require(totalReservedShares[bond] >= unreservedShares, InsufficientReservedShares());
+            uint256 seniorShares = IEVault(bond).totalSupply() - totalReservedShares[bond];
+            require(totalReservedShares[bond] >= seniorShares, ReservedSharesLocked());
 
             if (state == BOND_STATE_ACTIVE) adjustSupplyCap(bond);
         }
@@ -289,6 +289,7 @@ contract LayerCredit is EVCUtil {
         IEVault newEscrow = IEVault(GenericFactory(eVaultFactory).createProxy(address(0), false, abi.encodePacked(asset, address(0), address(0))));
         escrowVaults[asset] = address(newEscrow);
 
+        newEscrow.setHookConfig(address(0), 0);
         newEscrow.setGovernorAdmin(address(0));
 
         return newEscrow;

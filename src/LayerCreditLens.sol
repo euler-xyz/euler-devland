@@ -180,9 +180,13 @@ contract LayerCreditLens {
         uint256 myApprovalLayerCredit;
 
         MyBondBalancesCollateral[] collaterals;
+
+        address[] evcCollaterals;
+        address[] evcControllers;
     }
 
     function getMyBondBalances(address layerCredit, MyBondBalancesInput[] memory inps, address mePrimary) external view returns (MyBondBalances[] memory bals) {
+        IEVC evc = IEVC(LayerCredit(layerCredit).EVC());
         bals = new MyBondBalances[](inps.length);
 
         for (uint256 i = 0; i < inps.length; ++i) {
@@ -211,15 +215,19 @@ contract LayerCreditLens {
                     myApproval: colAsset.allowance(mePrimary, ltvs[j])
                 });
             }
+
+            bals[i].evcCollaterals = evc.getCollaterals(me);
+            bals[i].evcControllers = evc.getControllers(me);
         }
     }
 
 
 
     struct HistoryEntry {
+        uint256 raw;
         address bond;
         address who;
-        uint256 raw;
+        uint8 whoSubAccountId;
     }
 
     function extractEntityId(uint256 r, uint256 byteOffset) internal pure returns (uint40) {
@@ -228,14 +236,15 @@ contract LayerCreditLens {
 
     function getHistoryForEntity(address layerCredit, address entity) external view returns (HistoryEntry[] memory entries) {
         LayerCredit lc = LayerCredit(layerCredit);
+        IEVC evc = IEVC(lc.EVC());
 
         uint256[] memory raw = lc.getHistoryForEntity(entity, 0, type(uint256).max);
         entries = new HistoryEntry[](raw.length);
 
         for (uint256 i = 0; i < raw.length; ++i) {
-            entries[i].bond = lc.getHistEntityById(extractEntityId(raw[i], 26));
-            entries[i].who = lc.getHistEntityById(extractEntityId(raw[i], 21));
             entries[i].raw = raw[i];
+            entries[i].bond = lc.getHistEntityById(extractEntityId(raw[i], 26));
+            (entries[i].who, entries[i].whoSubAccountId) = addressToOwner(evc, lc.getHistEntityById(extractEntityId(raw[i], 21)));
         }
     }
 
@@ -243,6 +252,12 @@ contract LayerCreditLens {
 
 
 
+
+    function addressToOwner(IEVC evc, address a) internal view returns (address owner, uint8 subAccountId) {
+        owner = evc.getAccountOwner(a);
+        if (owner == address(0)) owner = a;
+        subAccountId = uint8((uint160(a) ^ uint160(owner)) & 0xFF);
+    }
 
     function isEscrow(address layerCredit, address v) internal view returns (bool) {
         return LayerCredit(layerCredit).escrowVaults(IEVault(v).asset()) == v;

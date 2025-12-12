@@ -3,15 +3,23 @@ contract
   collect early repay penalty
     ? repay method in LayerCredit that pulls in repay amount+fee
     deposit the collected penalty into the bond vault on behalf of creator (works great if creator is earn vault)
+  let bond creator choose reserve multiplier (<= max multiplier)
   variable interest rates
-  factor into multiple files, structured storage
-  packing, code-size reduction
-  tests
+  all-subaccount history view (use entity with last byte zeroed out, or primary)
+
+  misc
+    factor into multiple files, structured storage
+    packing, code-size reduction
+    tests
+
   ? if restricted lender, don't require reserves
   ? decide if we should support pull oracles or not (ie if StubOracle needed)
   ? when creating bonds, verify EVK impl hasn't changed since deployment
   ? should debt socialisation be on? how do reserved funds become junior
   ? separate contract: secondary market for bond shares
+
+bugs
+  if asset is WETH and unit of account is WETH, it breaks. probably just don't install oracle in router
 
 docs
 
