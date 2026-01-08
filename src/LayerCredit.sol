@@ -566,7 +566,7 @@ contract LayerCredit is EVCUtil {
     function repay(uint256 amount, address receiver) external {
         (address bond,) = hookInfo();
         // FIXME: collect early repay penalty
-        _addToHistory(HISTORY_ACTION_REPAY, bond, receiver, amount.to_dfloat16());
+        _addToHistory(HISTORY_ACTION_REPAY, bond, receiver, IEVault(bond).debtOf(receiver).to_dfloat16());
     }
 
     function repayWithShares(uint256 amount, address receiver) external {
