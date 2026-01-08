@@ -12,7 +12,6 @@ import {GenericFactory} from "evk/GenericFactory/GenericFactory.sol";
 import "evk/EVault/shared/Constants.sol";
 
 import {IEulerRouterFactory, IEulerRouter} from "./interfaces/Misc.sol";
-import {StubOracle} from "./StubOracle.sol";
 import "./DFloat16.sol";
 
 
@@ -23,7 +22,6 @@ contract LayerCredit is EVCUtil {
 
     GenericFactory immutable private eVaultFactory;
     IEulerRouterFactory immutable private routerFactory;
-    StubOracle immutable private stubOracle; // FIXME: do we want to support pull oracles?
 
     uint256 private constant MAX_COLLATERALS = 3;
 
@@ -39,7 +37,6 @@ contract LayerCredit is EVCUtil {
     constructor(address evc, address eVaultFactory_, address routerFactory_, address settingAdmin_) EVCUtil(evc) {
         eVaultFactory = GenericFactory(eVaultFactory_);
         routerFactory = IEulerRouterFactory(routerFactory_);
-        stubOracle = new StubOracle();
 
         settingAdmin = settingAdmin_;
     }
@@ -173,9 +170,8 @@ contract LayerCredit is EVCUtil {
             uint16 liqLTV = p.collaterals[i].liquidationLTV;
             require(liqLTV > 0.1e4, InvalidLTV());
 
-            router.govSetConfig(collateralVault.asset(), p.unitOfAccount, address(stubOracle));
-            vault.setLTV(address(collateralVault), uint16(uint256(liqLTV) * 0.98e18 / 1e18), liqLTV, 0);
             router.govSetConfig(collateralVault.asset(), p.unitOfAccount, p.collaterals[i].oracle);
+            vault.setLTV(address(collateralVault), uint16(uint256(liqLTV) * 0.98e18 / 1e18), liqLTV, 0);
         }
 
         // Renounce router governorship
@@ -566,7 +562,8 @@ contract LayerCredit is EVCUtil {
     function repay(uint256 amount, address receiver) external {
         (address bond,) = hookInfo();
         // FIXME: collect early repay penalty
-        _addToHistory(HISTORY_ACTION_REPAY, bond, receiver, IEVault(bond).debtOf(receiver).to_dfloat16());
+        uint256 repayAmount = amount == type(uint256).max ? IEVault(bond).debtOf(receiver) : amount;
+        _addToHistory(HISTORY_ACTION_REPAY, bond, receiver, repayAmount.to_dfloat16());
     }
 
     function repayWithShares(uint256 amount, address receiver) external {
