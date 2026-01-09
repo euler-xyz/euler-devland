@@ -178,7 +178,7 @@ contract LayerCredit is EVCUtil {
 
         router.transferGovernance(address(0));
 
-        _addToHistory(HISTORY_ACTION_BONDDEPLOY, address(vault), address(0), 0);
+        _addToHistory(HISTORY_ACTION_BONDDEPLOY, address(vault), _msgSender(), 0);
 
         return address(vault);
     }
@@ -343,7 +343,7 @@ contract LayerCredit is EVCUtil {
 
 
     // History layout:
-    // [action: 1] [bondId: 5] [whoId: 5] [timestamp: 5] [block: 5] [metadata: 11]
+    // [action: 1] [bondId: 5] [whoId: 5] [whoSubAccount: 1] [timestamp: 5] [block: 5] [metadata: 10]
 
     uint64 public historyLength;
     uint40 private nextHistEntityId = 1;
@@ -389,18 +389,21 @@ contract LayerCredit is EVCUtil {
     }
 
     function _addToHistory(uint8 action, address bond, address who, uint256 metadata, address extra) internal {
-        require(metadata < type(uint88).max, MetadataTooBig());
+        require(metadata < type(uint80).max, MetadataTooBig());
+
+        (address whoOwner, uint8 whoSubAccount) = addressToOwner(who);
 
         uint40 bondEntity = _histEntity(bond);
-        uint40 whoEntity = _histEntity(who);
+        uint40 whoEntity = _histEntity(whoOwner);
         uint40 extraEntity = _histEntity(extra);
 
         uint256 h = action;
         h = (h << 40) | bondEntity;
         h = (h << 40) | whoEntity;
+        h = (h << 8) | whoSubAccount;
         h = (h << 40) | uint40(block.timestamp);
         h = (h << 40) | uint40(block.number);
-        h = (h << 88) | metadata;
+        h = (h << 80) | metadata;
 
         uint64 histLoc = historyLength++;
 
@@ -451,8 +454,13 @@ contract LayerCredit is EVCUtil {
 
 
 
+    function addressToOwner(address a) internal view returns (address owner, uint8 subAccountId) {
+        owner = evc.getAccountOwner(a);
+        if (owner == address(0)) owner = a;
+        subAccountId = uint8((uint160(a) ^ uint160(owner)) & 0xFF);
+    }
 
-
+    /// @dev Are addresses the same, or sub-accounts of one-another?
     function isSameAccount(address a, address b) internal pure returns (bool) {
         return (uint160(a) >> 8) == (uint160(b) >> 8);
     }
@@ -489,7 +497,7 @@ contract LayerCredit is EVCUtil {
 
     error TransitionRequired();
 
-    /// @dev Extracts original msg.sender from trailing calldata. Can only be used within a hook invoked by a bond vault.
+    /// @dev Extracts original msg.sender from trailing calldata. Must only be used within a hook invoked by a bond vault.
     function hookInfo() internal view returns (address bond, address msgSender) {
         uint8 state = bondsByVault[msg.sender].state;
         require(state != 0, UnknownVault());

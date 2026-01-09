@@ -1,22 +1,20 @@
 contract
-  remove StubOracle stuff (no need to support pull oracles)
   admin methods
-  collect early repay penalty
-    ? repay method in LayerCredit that pulls in repay amount+fee
-    deposit the collected penalty into the bond vault on behalf of creator (works great if creator is earn vault)
-  variable interest rates
-  ? let bond creator reduce reserve multiplier (<= max multiplier)
+  early repay penalty
+    repay method in LayerCredit that pulls in repay amount+fee
+      deposit the collected penalty into the bond vault on behalf of creator (works great if creator is earn vault)
+  if restricted lender, don't require reserves
+  when creating bonds, verify EVK impl hasn't changed since deployment
   ? all-subaccount history view (use entity with last byte zeroed out, or primary)
+  ? variable interest rates
+  ? let bond creator reduce reserve multiplier (<= max multiplier)
+  ? should debt socialisation be on? how do reserved funds become junior
+  ? secondary market for trading bond shares (separate contract)
 
   misc
     factor into multiple files, structured storage
     storage packing, code-size reduction
     tests
-
-  ? if restricted lender, don't require reserves
-  ? when creating bonds, verify EVK impl hasn't changed since deployment
-  ? should debt socialisation be on? how do reserved funds become junior
-  ? separate contract: secondary market for bond shares
 
 bugs
   if asset is WETH and unit of account is WETH, it breaks. probably just don't install oracle in router
@@ -29,28 +27,46 @@ lens
   return oracle prices
 
 UI
-  borrow/lend tabs
-    filtering/sorting
-  bond page
-    bond details
-    my balances
-    oracle prices
-    actions
-      deposit/withdraw
-      reserve/unreserve
-      borrow/repay
-      add/remove collateral
-      touch/transition
-  reuseable history component
+  homepage
+    active bonds (sorted by totalSupply)
+    global history
+    news
+
+  supply page
+    filters
+      supply asset selector
+      minimum size selection
+      term duration
+
+  borrow page
+    filters
+      borrow asset selector
+      collateral asset selector
+      minimum size selection
+      term duration
+    list of bonds
+
+  bond info page
+    show restricted borrowers/lenders
+    oracle details, prices
+    touch/transition
+      add transition batch item to repay
+    when doing repay, if max clicked, have a checkbox to withdraw all the collateral too
+    subscreen: suppliers/borrowers
+      liquidate button
+    subscreen: open interest
+
   my account screen
-  suppliers/borrowers screen
-    liquidate button
-    ? open interest screen
+    current positions
+      nav/ltv/leverage
+    my history
+
   settings screen
     add custom tokens
+    add custom oracles
+
+  oracle integrity whitelist
   subaccount selector
-  command bar
   url parameters
-  news items at bottom of homepage
-  spy mode
-  on repay form, have a checkbox to withdraw all collateral too
+  command bar
+  ? spy mode
