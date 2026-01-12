@@ -63,23 +63,23 @@ contract LayerCreditLens {
             {
                 address[] memory ltvs = v.LTVList();
 
-                uint8 collateralFlags;
+                uint256 collateralFlags;
 
                 if (ltvs.length >= 1) {
-                    if (isEscrow(layerCredit, ltvs[0])) collateralFlags |= 4;
+                    if (!isEscrow(layerCredit, ltvs[0])) collateralFlags |= 4;
                     address col0 = IEVault(ltvs[0]).asset();
                     w2 |= uint256(uint160(col0)) << (8*8);
                 }
 
                 if (ltvs.length >= 2) {
-                    if (isEscrow(layerCredit, ltvs[1])) collateralFlags |= 2;
+                    if (!isEscrow(layerCredit, ltvs[1])) collateralFlags |= 2;
                     address col1 = IEVault(ltvs[1]).asset();
                     w2 |= uint256(uint160(col1)) >> (12*8);
                     w3 |= uint256(uint160(col1)) << (20*8);
                 }
 
                 if (ltvs.length >= 3) {
-                    if (isEscrow(layerCredit, ltvs[2])) collateralFlags |= 1;
+                    if (!isEscrow(layerCredit, ltvs[2])) collateralFlags |= 1;
                     address col2 = IEVault(ltvs[2]).asset();
                     w3 |= uint256(uint160(col2));
                 }

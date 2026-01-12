@@ -159,7 +159,7 @@ contract LayerCredit is EVCUtil {
 
             IEVault collateralVault;
 
-            if (eVaultFactory.isProxy(address(collateralVault))) {
+            if (eVaultFactory.isProxy(address(p.collaterals[i].asset))) {
                 collateralVault = IEVault(p.collaterals[i].asset);
             } else {
                 collateralVault = getEscrowVault(p.collaterals[i].asset);
