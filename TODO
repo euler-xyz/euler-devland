@@ -3,12 +3,6 @@ contract
   early repay penalty
     repay method in LayerCredit that pulls in repay amount+fee
       deposit the collected penalty into the bond vault on behalf of creator (works great if creator is earn vault)
-  if restricted lender, don't require reserves
-  when creating bonds, verify EVK impl hasn't changed since deployment
-  ? all-subaccount history view (use entity with last byte zeroed out, or primary)
-  ? variable interest rates
-  ? let bond creator reduce reserve multiplier (<= max multiplier)
-  ? should debt socialisation be on? how do reserved funds become junior
   ? secondary market for trading bond shares (separate contract)
 
   misc
@@ -22,6 +16,7 @@ bugs
     disable buttons etc
 
 docs
+licenses
 
 lens
   return oracle prices
@@ -31,6 +26,9 @@ UI
     active bonds (sorted by totalSupply)
     global history
     news
+
+  bond create screen
+    show summary in right column
 
   supply page
     filters

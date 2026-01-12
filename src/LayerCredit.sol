@@ -22,6 +22,7 @@ contract LayerCredit is EVCUtil {
 
     GenericFactory immutable private eVaultFactory;
     IEulerRouterFactory immutable private routerFactory;
+    address immutable private originalFactoryImplementation;
 
     uint256 private constant MAX_COLLATERALS = 3;
 
@@ -37,6 +38,7 @@ contract LayerCredit is EVCUtil {
     constructor(address evc, address eVaultFactory_, address routerFactory_, address settingAdmin_) EVCUtil(evc) {
         eVaultFactory = GenericFactory(eVaultFactory_);
         routerFactory = IEulerRouterFactory(routerFactory_);
+        originalFactoryImplementation = eVaultFactory.implementation();
 
         settingAdmin = settingAdmin_;
     }
@@ -63,11 +65,9 @@ contract LayerCredit is EVCUtil {
         address oracle;
         uint256 termDuration;
 
+        address lender;
+        address borrower;
         uint80 interestRate;
-        address interestFeeReceiver;
-
-        address restrictedLender;
-        address restrictedBorrower;
         uint64 earlyRepayPenalty;
 
         DeployBondCollateral[] collaterals;
@@ -84,11 +84,10 @@ contract LayerCredit is EVCUtil {
         uint8 state;
         uint40 termEnd;
         uint40 termStart;
-        address restrictedLender;
-        address restrictedBorrower;
+        address lender;
+        address borrower;
         uint64 earlyRepayPenalty;
         uint80 interestRate;
-        uint40 reserveMultiplier; // 1e4 scale
         uint80 settlementInterestRate;
         uint40 nextTransitionTime;
     }
@@ -103,6 +102,7 @@ contract LayerCredit is EVCUtil {
 
 
     error SystemSunset();
+    error FactoryImplementationChanged();
     error UnknownVault();
     error InvalidTermDuration();
     error InvalidNumberOfCollaterals();
@@ -115,6 +115,7 @@ contract LayerCredit is EVCUtil {
 
     function deployBond(DeployBondParams memory p) external nonReentrant returns (address) {
         require(settingMaxTermDuration != 0, SystemSunset());
+        require(originalFactoryImplementation == eVaultFactory.implementation(), FactoryImplementationChanged());
         require(p.termDuration <= settingMaxTermDuration, InvalidTermDuration());
         require(p.collaterals.length >= 1 && p.collaterals.length <= MAX_COLLATERALS, InvalidNumberOfCollaterals());
         require(p.earlyRepayPenalty <= 1e18, InvalidEarlyRepayPenalty());
@@ -130,11 +131,10 @@ contract LayerCredit is EVCUtil {
             state: BOND_STATE_ACTIVE,
             termEnd: termEnd,
             termStart: uint40(block.timestamp),
-            restrictedLender: p.restrictedLender,
-            restrictedBorrower: p.restrictedBorrower,
+            lender: p.lender,
+            borrower: p.borrower,
             earlyRepayPenalty: p.earlyRepayPenalty,
             interestRate: p.interestRate,
-            reserveMultiplier: settingReserveMultiplier,
             settlementInterestRate: settingSettlementInterestRate,
             nextTransitionTime: termEnd
         });
@@ -145,11 +145,9 @@ contract LayerCredit is EVCUtil {
 
         vault.setInterestRateModel(address(this));
         vault.setInterestFee(settingInterestFee);
-        vault.setFeeReceiver(p.interestFeeReceiver);
         vault.setHookConfig(address(this), OP_DEPOSIT | OP_MINT | OP_SKIM | OP_WITHDRAW | OP_REDEEM | OP_TRANSFER | OP_BORROW | OP_REPAY | OP_REPAY_WITH_SHARES | OP_PULL_DEBT | OP_CONVERT_FEES | OP_LIQUIDATE);
         vault.setMaxLiquidationDiscount(0.15e4);
         vault.setLiquidationCoolOffTime(1);
-        vault.setCaps(2, 0); // supplyCap is 0, borrowCap is unlimited
 
         router.govSetResolvedVault(address(vault), true);
         router.govSetConfig(p.asset, p.unitOfAccount, p.oracle);
@@ -226,57 +224,6 @@ contract LayerCredit is EVCUtil {
 
 
 
-    function reserve(address bond, uint256 amount, address receiver) external callThroughEVC nonReentrant returns (uint256 shares) {
-        uint8 state = bondsByVault[bond].state;
-        require(state != 0, UnknownVault());
-        require(state == BOND_STATE_ACTIVE, InvalidVaultState());
-
-        _enforceRestrictedLender(bond, receiver);
-
-        IERC20(IEVault(bond).asset()).safeTransferFrom(_msgSender(), bond, amount);
-        shares = IEVault(bond).skim(amount, address(this));
-
-        reservedShares[bond][receiver] += shares;
-        totalReservedShares[bond] += shares;
-        adjustSupplyCap(bond);
-
-        _addToHistory(HISTORY_ACTION_RESERVE, bond, receiver, amount.to_dfloat16());
-    }
-
-    function unreserve(address bond, uint256 shares, address receiver) external nonReentrant returns (uint256 assets) {
-        uint8 state = bondsByVault[bond].state;
-        require(state != 0, UnknownVault());
-
-        require(reservedShares[bond][_msgSender()] >= shares, InsufficientShares());
-
-        reservedShares[bond][_msgSender()] -= shares;
-        totalReservedShares[bond] -= shares;
-
-        // FIXME: make sure receiver is an owner account (or does redeem() do this already?)
-        assets = IEVault(bond).redeem(shares, receiver, address(this));
-
-        if (state != BOND_STATE_FINAL) {
-            // Except when final, reserved shares can only be removed if they aren't covering any senior shares
-            uint256 seniorShares = IEVault(bond).totalSupply() - totalReservedShares[bond];
-            require(totalReservedShares[bond] >= seniorShares, ReservedSharesLocked());
-
-            if (state == BOND_STATE_ACTIVE) adjustSupplyCap(bond);
-        }
-
-        _addToHistory(HISTORY_ACTION_UNRESERVE, bond, _msgSender(), IEVault(bond).convertToAssets(shares).to_dfloat16());
-    }
-
-    function adjustSupplyCap(address bond) internal {
-        uint256 newReserved = IEVault(bond).convertToAssets(totalReservedShares[bond]);
-        uint256 newCap = newReserved * bondsByVault[bond].reserveMultiplier / 1e4;
-
-        IEVault(bond).setCaps(newCap.to_dfloat16(), 0);
-    }
-
-
-
-
-
 
 
     function getEscrowVault(address asset) internal returns (IEVault) {
@@ -334,7 +281,8 @@ contract LayerCredit is EVCUtil {
         uint8 state = b.state;
         require(state != 0, UnknownVault());
 
-        if (state == 1) return b.interestRate;
+        if (state == BOND_STATE_ACTIVE) return b.interestRate;
+        else if (state == BOND_STATE_FINAL) return 0;
         else return b.settlementInterestRate;
     }
 
@@ -465,17 +413,17 @@ contract LayerCredit is EVCUtil {
         return (uint160(a) >> 8) == (uint160(b) >> 8);
     }
 
-    error RestrictedLender();
-    error RestrictedBorrower();
+    error LenderRestricted();
+    error BorrowerRestricted();
 
-    function _enforceRestrictedLender(address bond, address who) internal view {
-        address restrictedLender = bondsByVault[bond].restrictedLender;
-        require(restrictedLender == address(0) || isSameAccount(who, restrictedLender), RestrictedLender());
+    function _enforceLender(address bond, address who) internal view {
+        address lender = bondsByVault[bond].lender;
+        require(lender == address(0) || isSameAccount(who, lender), LenderRestricted());
     }
 
-    function _enforceRestrictedBorrower(address bond, address who) internal view {
-        address restrictedBorrower = bondsByVault[bond].restrictedBorrower;
-        require(restrictedBorrower == address(0) || isSameAccount(who, restrictedBorrower), RestrictedBorrower());
+    function _enforceBorrower(address bond, address who) internal view {
+        address borrower = bondsByVault[bond].borrower;
+        require(borrower == address(0) || isSameAccount(who, borrower), BorrowerRestricted());
     }
 
 
@@ -512,19 +460,19 @@ contract LayerCredit is EVCUtil {
 
     function deposit(uint256 amount, address receiver) external {
         (address bond,) = hookInfo();
-        _enforceRestrictedLender(bond, receiver);
+        _enforceLender(bond, receiver);
         _addToHistory(HISTORY_ACTION_DEPOSIT, bond, receiver, amount.to_dfloat16());
     }
 
     function mint(uint256 shares, address receiver) external {
         (address bond,) = hookInfo();
-        _enforceRestrictedLender(bond, receiver);
+        _enforceLender(bond, receiver);
         _addToHistory(HISTORY_ACTION_DEPOSIT, bond, receiver, IEVault(bond).convertToAssets(shares).to_dfloat16());
     }
 
     function skim(uint256 amount, address receiver) external {
         (address bond, address msgSender) = hookInfo();
-        _enforceRestrictedLender(bond, receiver);
+        _enforceLender(bond, receiver);
         // Avoid duplicate logs for reserve()
         if (msgSender != address(this)) _addToHistory(HISTORY_ACTION_DEPOSIT, bond, receiver, amount.to_dfloat16());
     }
@@ -563,7 +511,7 @@ contract LayerCredit is EVCUtil {
 
     function borrow(uint256 amount, address) external {
         (address bond, address msgSender) = hookInfo();
-        _enforceRestrictedBorrower(bond, msgSender);
+        _enforceBorrower(bond, msgSender);
         _addToHistory(HISTORY_ACTION_BORROW, bond, msgSender, amount.to_dfloat16());
     }
 
@@ -584,7 +532,7 @@ contract LayerCredit is EVCUtil {
 
     function pullDebt(uint256 amount, address from) external {
         (address bond, address msgSender) = hookInfo();
-        _enforceRestrictedBorrower(bond, msgSender);
+        _enforceBorrower(bond, msgSender);
         uint16 amountCompressed = amount.to_dfloat16();
         _addToHistory(HISTORY_ACTION_REPAY, bond, from, amountCompressed);
         _addToHistory(HISTORY_ACTION_BORROW, bond, msgSender, amountCompressed);

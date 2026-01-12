@@ -13,9 +13,9 @@ contract LayerCreditLens {
     using DFloat16 for uint256;
 
     // word0: 20 + 1 + 1 + 5 + 5
-    //   vault, state, flags(restrictedLender, restrictedBorrower), termEnd, termStart
-    // word1: 1 + 2 + 2 + 2 + 2 + 2 + 2 + 2
-    //   assetDecimals, cash, borrows, reserves, supplyCap, supplyAPY, borrowAPY, earlyRepayPenalty
+    //   vault, state, flags(lenderRestricted, borrowerRestricted), termEnd, termStart
+    // word1: 1 + 2 + 2 + 2 + 2 + 2
+    //   assetDecimals, cash, borrows, supplyAPY, borrowAPY, earlyRepayPenalty
     // word2: 1 + 20 + 8
     //   flags(col0External, col1External, col2External), col0, col1[0:8]
     // word3: 12 + 20
@@ -26,8 +26,8 @@ contract LayerCreditLens {
         unchecked {
             {
                 uint8 bondFlags;
-                if (b.restrictedLender != address(0)) bondFlags |= 2;
-                if (b.restrictedBorrower != address(0)) bondFlags |= 1;
+                if (b.lender != address(0)) bondFlags |= 2;
+                if (b.borrower != address(0)) bondFlags |= 1;
 
                 w0 = uint160(bond);
                 w0 = (w0 << 8) | b.state;
@@ -47,11 +47,6 @@ contract LayerCreditLens {
                 w1 = v.decimals();
                 w1 = (w1 << 16) | cash.to_dfloat16();
                 w1 = (w1 << 16) | borrows.to_dfloat16();
-                w1 = (w1 << 16) | v.convertToAssets(LayerCredit(layerCredit).totalReservedShares(bond)).to_dfloat16();
-                {
-                    (uint16 supplyCap,) = v.caps();
-                    w1 = (w1 << 16) | supplyCap;
-                }
                 {
                     (uint256 borrowAPY, uint256 supplyAPY) = _computeAPYs(v.interestRate(), cash, borrows, v.interestFee());
                     w1 = (w1 << 16) | supplyAPY.to_dfloat16();
@@ -123,7 +118,6 @@ contract LayerCreditLens {
         uint256 cash;
         uint256 totalBorrows;
         uint256 totalShares;
-        uint256 totalReservedShares;
         uint40 nextTransitionTime;
         DetailedCollateralInfo[] collaterals;
     }
@@ -141,7 +135,6 @@ contract LayerCreditLens {
         info.cash = IEVault(bond).cash();
         info.totalBorrows = IEVault(bond).totalBorrows();
         info.totalShares = IEVault(bond).totalSupply();
-        info.totalReservedShares = LayerCredit(layerCredit).totalReservedShares(bond);
         info.nextTransitionTime = bondState.nextTransitionTime;
 
         address[] memory ltvs = IEVault(bond).LTVList();

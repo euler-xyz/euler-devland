@@ -87,11 +87,9 @@ contract LayerCreditPopulated is LayerCreditBasic {
             oracle: address(oracle),
             termDuration: p.termDuration,
 
+            lender: address(0),
+            borrower: address(0),
             interestRate: p.interestRate,
-            interestFeeReceiver: address(0),
-
-            restrictedLender: address(0),
-            restrictedBorrower: address(0),
             earlyRepayPenalty: 0,
 
             collaterals: collaterals
