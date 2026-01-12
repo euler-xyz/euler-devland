@@ -25,22 +25,16 @@ contract LayerCredit is EVCUtil {
     address immutable private originalFactoryImplementation;
 
     uint256 private constant MAX_COLLATERALS = 3;
+    uint256 private constant MAX_TERM_DURATION = 731 days; // 2 non-leap years plus a day
 
-    address public settingAdmin;
-    uint40 public settingMaxTermDuration = 90 days; // Special value of 0 means system sunset (no new bond creation allowed)
-    uint16 public settingInterestFee = 0.1e4;
-    uint40 public settingReserveMultiplier = 20e4; // 1e4 scale
-    uint80 public settingSettlementInterestRate = 21964959992727444861; // 100% APY
     bool locked;
 
     mapping(address asset => address escrowVault) public escrowVaults;
 
-    constructor(address evc, address eVaultFactory_, address routerFactory_, address settingAdmin_) EVCUtil(evc) {
+    constructor(address evc, address eVaultFactory_, address routerFactory_) EVCUtil(evc) {
         eVaultFactory = GenericFactory(eVaultFactory_);
         routerFactory = IEulerRouterFactory(routerFactory_);
         originalFactoryImplementation = eVaultFactory.implementation();
-
-        settingAdmin = settingAdmin_;
     }
 
     error Reentrancy();
@@ -88,7 +82,6 @@ contract LayerCredit is EVCUtil {
         address borrower;
         uint64 earlyRepayPenalty;
         uint80 interestRate;
-        uint80 settlementInterestRate;
         uint40 nextTransitionTime;
     }
 
@@ -101,7 +94,6 @@ contract LayerCredit is EVCUtil {
     mapping(address vault => uint256) public totalReservedShares;
 
 
-    error SystemSunset();
     error FactoryImplementationChanged();
     error UnknownVault();
     error InvalidTermDuration();
@@ -114,9 +106,8 @@ contract LayerCredit is EVCUtil {
     error ReservedSharesLocked();
 
     function deployBond(DeployBondParams memory p) external nonReentrant returns (address) {
-        require(settingMaxTermDuration != 0, SystemSunset());
         require(originalFactoryImplementation == eVaultFactory.implementation(), FactoryImplementationChanged());
-        require(p.termDuration <= settingMaxTermDuration, InvalidTermDuration());
+        require(p.termDuration <= MAX_TERM_DURATION, InvalidTermDuration());
         require(p.collaterals.length >= 1 && p.collaterals.length <= MAX_COLLATERALS, InvalidNumberOfCollaterals());
         require(p.earlyRepayPenalty <= 1e18, InvalidEarlyRepayPenalty());
 
@@ -135,7 +126,6 @@ contract LayerCredit is EVCUtil {
             borrower: p.borrower,
             earlyRepayPenalty: p.earlyRepayPenalty,
             interestRate: p.interestRate,
-            settlementInterestRate: settingSettlementInterestRate,
             nextTransitionTime: termEnd
         });
 
@@ -144,7 +134,6 @@ contract LayerCredit is EVCUtil {
         // Configure vault
 
         vault.setInterestRateModel(address(this));
-        vault.setInterestFee(settingInterestFee);
         vault.setHookConfig(address(this), OP_DEPOSIT | OP_MINT | OP_SKIM | OP_WITHDRAW | OP_REDEEM | OP_TRANSFER | OP_BORROW | OP_REPAY | OP_REPAY_WITH_SHARES | OP_PULL_DEBT | OP_CONVERT_FEES | OP_LIQUIDATE);
         vault.setMaxLiquidationDiscount(0.15e4);
         vault.setLiquidationCoolOffTime(1);
@@ -281,9 +270,13 @@ contract LayerCredit is EVCUtil {
         uint8 state = b.state;
         require(state != 0, UnknownVault());
 
-        if (state == BOND_STATE_ACTIVE) return b.interestRate;
-        else if (state == BOND_STATE_FINAL) return 0;
-        else return b.settlementInterestRate;
+        if (state == BOND_STATE_ACTIVE) {
+            return b.interestRate;
+        } else if (state == BOND_STATE_SOFT_SETTLEMENT || state == BOND_STATE_HARD_SETTLEMENT) {
+            return b.interestRate * 3;
+        }
+
+        return 0; // Interest stops accruing once FINAL
     }
 
 

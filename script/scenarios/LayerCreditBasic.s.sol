@@ -43,7 +43,7 @@ contract LayerCreditBasic is DeployScenario {
     }
 
     function deployLayerCredit() internal {
-        layerCredit = new LayerCredit(address(evc), address(factory), address(routerFactory), address(0));
+        layerCredit = new LayerCredit(address(evc), address(factory), address(routerFactory));
         layerCreditLens = new LayerCreditLens();
 
         string memory result = vm.serializeAddress("layerCredit", "layerCredit", address(layerCredit));
