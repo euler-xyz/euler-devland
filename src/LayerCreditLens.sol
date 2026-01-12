@@ -13,9 +13,9 @@ contract LayerCreditLens {
     using DFloat16 for uint256;
 
     // word0: 20 + 1 + 1 + 5 + 5
-    //   vault, state, flags(lenderRestricted, borrowerRestricted), termEnd, termStart
-    // word1: 1 + 2 + 2 + 2 + 2 + 2
-    //   assetDecimals, cash, borrows, supplyAPY, borrowAPY, earlyRepayPenalty
+    //   vault, state, flags(borrowerRestricted), termEnd, termStart
+    // word1: 1 + 2 + 2 + 2 + 2 + 2 + 20
+    //   assetDecimals, cash, borrows, supplyAPY, borrowAPY, earlyRepayPenalty, lender
     // word2: 1 + 20 + 8
     //   flags(col0External, col1External, col2External), col0, col1[0:8]
     // word3: 12 + 20
@@ -26,7 +26,6 @@ contract LayerCreditLens {
         unchecked {
             {
                 uint8 bondFlags;
-                if (b.lender != address(0)) bondFlags |= 2;
                 if (b.borrower != address(0)) bondFlags |= 1;
 
                 w0 = uint160(bond);
@@ -53,6 +52,7 @@ contract LayerCreditLens {
                     w1 = (w1 << 16) | borrowAPY.to_dfloat16();
                 }
                 w1 = (w1 << 16) | uint256(b.earlyRepayPenalty).to_dfloat16();
+                w1 = (w1 << (20*8)) | uint256(uint160(b.lender));
             }
 
             {
