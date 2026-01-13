@@ -1,5 +1,4 @@
 contract
-  admin methods
   early repay penalty
     repay method in LayerCredit that pulls in repay amount+fee
       deposit the collected penalty into the bond vault on behalf of creator (works great if creator is earn vault)

@@ -10,6 +10,7 @@ import {EVCUtil} from "evc/utils/EVCUtil.sol";
 import {IEVault} from "evk/EVault/IEVault.sol";
 import {GenericFactory} from "evk/GenericFactory/GenericFactory.sol";
 import "evk/EVault/shared/Constants.sol";
+import {RPow} from "evk/EVault/shared/lib/RPow.sol";
 
 import {IEulerRouterFactory, IEulerRouter} from "./interfaces/Misc.sol";
 import "./DFloat16.sol";
@@ -73,7 +74,6 @@ contract LayerCredit is EVCUtil {
     uint8 internal constant BOND_STATE_HARD_SETTLEMENT = 3;
     uint8 internal constant BOND_STATE_FINAL = 4;
 
-    // FIXME: pack this
     struct BondState {
         uint8 state;
         uint40 termEnd;
@@ -89,9 +89,6 @@ contract LayerCredit is EVCUtil {
     EnumerableSet.AddressSet private activeBonds;
     EnumerableSet.AddressSet private settlingBonds;
     address[] private inactiveBonds;
-
-    mapping(address vault => mapping(address who => uint256 shares)) public reservedShares;
-    mapping(address vault => uint256) public totalReservedShares;
 
 
     error FactoryImplementationChanged();
@@ -110,6 +107,8 @@ contract LayerCredit is EVCUtil {
         require(p.termDuration <= MAX_TERM_DURATION, InvalidTermDuration());
         require(p.collaterals.length >= 1 && p.collaterals.length <= MAX_COLLATERALS, InvalidNumberOfCollaterals());
         require(p.earlyRepayPenalty <= 1e18, InvalidEarlyRepayPenalty());
+        // If lender is 0 (non-restricted), then early repay penalty must be 0 since there is no way to distribute the penalty to multiple lenders
+        require(p.lender != address(0) || p.earlyRepayPenalty == 0, InvalidEarlyRepayPenalty());
 
         IEulerRouter router = IEulerRouter(IEulerRouterFactory(routerFactory).deploy(address(this)));
         IEVault vault = IEVault(GenericFactory(eVaultFactory).createProxy(address(0), false, abi.encodePacked(p.asset, address(router), p.unitOfAccount)));
@@ -204,6 +203,8 @@ contract LayerCredit is EVCUtil {
             b.nextTransitionTime = uint40(block.timestamp + 3 days);
             b.state = BOND_STATE_HARD_SETTLEMENT;
         } else if (state == BOND_STATE_HARD_SETTLEMENT) {
+            IEVault(bond).setGovernorAdmin(address(0));
+            b.nextTransitionTime = type(uint40).max;
             b.state = BOND_STATE_FINAL;
         }
 
@@ -421,8 +422,43 @@ contract LayerCredit is EVCUtil {
 
 
 
+    error RepayAmountExceedsDebt();
 
+    function getRepayPenalty(address bond, uint256 amount, address receiver) public view returns (uint256, uint256) {
+        BondState storage b = bondsByVault[bond];
+        require(b.state != 0, UnknownVault());
 
+        {
+            uint256 debt = IEVault(bond).debtOf(receiver);
+            if (amount == type(uint256).max) amount = debt;
+            require(amount <= debt, RepayAmountExceedsDebt());
+        }
+
+        if (b.state != BOND_STATE_ACTIVE || b.earlyRepayPenalty == 0) return (amount, 0);
+        require(block.timestamp < b.nextTransitionTime, TransitionRequired());
+
+        uint256 timeRemaining = b.nextTransitionTime - block.timestamp;
+        (uint256 multiplier,) = RPow.rpow(b.interestRate + 1e27, timeRemaining, 1e27);
+        uint256 interestRemaining = (multiplier - 1e27) * amount / 1e27;
+
+        return (amount, interestRemaining * b.earlyRepayPenalty / 1e18);
+    }
+
+    function repayBond(address bond, uint256 amount, address receiver) external nonReentrant returns (uint256) {
+        uint256 penalty;
+        (amount, penalty) = getRepayPenalty(bond, amount, receiver);
+
+        IERC20 token = IERC20(IEVault(bond).asset());
+        token.safeTransferFrom(_msgSender(), address(this), amount + penalty);
+        token.forceApprove(bond, amount + penalty);
+
+        IEVault(bond).repay(amount, receiver);
+        IEVault(bond).deposit(penalty, bondsByVault[bond].lender);
+
+        _addToHistory(HISTORY_ACTION_REPAY, bond, receiver, (amount.to_dfloat16() << 16) | penalty.to_dfloat16());
+
+        return amount + penalty;
+    }
 
 
 
@@ -436,6 +472,8 @@ contract LayerCredit is EVCUtil {
         return this.isHookTarget.selector;
     }
 
+    error DirectRepayNotAllowed();
+    error OperationDisabled();
     error TransitionRequired();
 
     /// @dev Extracts original msg.sender from trailing calldata. Must only be used within a hook invoked by a bond vault.
@@ -452,9 +490,9 @@ contract LayerCredit is EVCUtil {
     }
 
     function deposit(uint256 amount, address receiver) external {
-        (address bond,) = hookInfo();
+        (address bond, address msgSender) = hookInfo();
         _enforceLender(bond, receiver);
-        _addToHistory(HISTORY_ACTION_DEPOSIT, bond, receiver, amount.to_dfloat16());
+        if (msgSender != address(this)) _addToHistory(HISTORY_ACTION_DEPOSIT, bond, receiver, amount.to_dfloat16());
     }
 
     function mint(uint256 shares, address receiver) external {
@@ -464,10 +502,9 @@ contract LayerCredit is EVCUtil {
     }
 
     function skim(uint256 amount, address receiver) external {
-        (address bond, address msgSender) = hookInfo();
+        (address bond,) = hookInfo();
         _enforceLender(bond, receiver);
-        // Avoid duplicate logs for reserve()
-        if (msgSender != address(this)) _addToHistory(HISTORY_ACTION_DEPOSIT, bond, receiver, amount.to_dfloat16());
+        _addToHistory(HISTORY_ACTION_DEPOSIT, bond, receiver, amount.to_dfloat16());
     }
 
     function withdraw(uint256 amount, address, address owner) external {
@@ -476,9 +513,8 @@ contract LayerCredit is EVCUtil {
     }
 
     function redeem(uint256 shares, address, address owner) external {
-        (address bond, address msgSender) = hookInfo();
-        // Avoid duplicate logs for unreserve()
-        if (msgSender != address(this)) _addToHistory(HISTORY_ACTION_WITHDRAW, bond, owner, IEVault(bond).convertToAssets(shares).to_dfloat16());
+        (address bond,) = hookInfo();
+        _addToHistory(HISTORY_ACTION_WITHDRAW, bond, owner, IEVault(bond).convertToAssets(shares).to_dfloat16());
     }
 
     function _transferInternal(address bond, address from, address to, uint256 amount) internal {
@@ -508,19 +544,13 @@ contract LayerCredit is EVCUtil {
         _addToHistory(HISTORY_ACTION_BORROW, bond, msgSender, amount.to_dfloat16());
     }
 
-    function repay(uint256 amount, address receiver) external {
-        (address bond,) = hookInfo();
-        // FIXME: collect early repay penalty
-        uint256 repayAmount = amount == type(uint256).max ? IEVault(bond).debtOf(receiver) : amount;
-        _addToHistory(HISTORY_ACTION_REPAY, bond, receiver, repayAmount.to_dfloat16());
+    function repay(uint256, address) external view {
+        (, address msgSender) = hookInfo();
+        require(msgSender == address(this), DirectRepayNotAllowed());
     }
 
-    function repayWithShares(uint256 amount, address receiver) external {
-        (address bond, address msgSender) = hookInfo();
-        uint16 amountCompressed = amount.to_dfloat16();
-        // FIXME: collect early repay penalty
-        _addToHistory(HISTORY_ACTION_WITHDRAW, bond, msgSender, amountCompressed);
-        _addToHistory(HISTORY_ACTION_REPAY, bond, receiver, amountCompressed);
+    function repayWithShares(uint256, address) external pure {
+        revert OperationDisabled();
     }
 
     function pullDebt(uint256 amount, address from) external {

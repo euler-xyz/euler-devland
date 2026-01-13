@@ -167,7 +167,6 @@ contract LayerCreditLens {
     struct MyBondBalances {
         uint256 myShares;
         uint256 myDebt;
-        uint256 myReservedShares;
         uint256 myUnderlyingBalance;
         uint256 myApprovalVault;
         uint256 myApprovalLayerCredit;
@@ -188,7 +187,6 @@ contract LayerCreditLens {
 
             bals[i].myShares = IEVault(bond).balanceOf(me);
             bals[i].myDebt = IEVault(bond).debtOf(me);
-            bals[i].myReservedShares = LayerCredit(layerCredit).reservedShares(bond, me);
 
             IERC20 asset = IERC20(IEVault(bond).asset());
 
