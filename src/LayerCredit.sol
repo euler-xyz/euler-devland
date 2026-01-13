@@ -27,6 +27,8 @@ contract LayerCredit is EVCUtil {
 
     uint256 private constant MAX_COLLATERALS = 3;
     uint256 private constant MAX_TERM_DURATION = 731 days; // 2 non-leap years plus a day
+    uint256 private constant SETTLEMENT_PERIOD = 3 days;
+    uint32 private constant LTV_RAMP_DOWN_PERIOD = 3 days;
 
     bool locked;
 
@@ -70,9 +72,8 @@ contract LayerCredit is EVCUtil {
 
 
     uint8 internal constant BOND_STATE_ACTIVE = 1;
-    uint8 internal constant BOND_STATE_SOFT_SETTLEMENT = 2;
-    uint8 internal constant BOND_STATE_HARD_SETTLEMENT = 3;
-    uint8 internal constant BOND_STATE_FINAL = 4;
+    uint8 internal constant BOND_STATE_SETTLEMENT = 2;
+    uint8 internal constant BOND_STATE_FINAL = 3;
 
     struct BondState {
         uint8 state;
@@ -172,10 +173,6 @@ contract LayerCredit is EVCUtil {
 
 
     function transition(address bond) external nonReentrant {
-        _transition(bond);
-    }
-
-    function _transition(address bond) internal {
         BondState storage b = bondsByVault[bond];
         uint8 state = b.state;
         require(state != 0, UnknownVault());
@@ -183,6 +180,9 @@ contract LayerCredit is EVCUtil {
         if (block.timestamp < b.nextTransitionTime || state == BOND_STATE_FINAL) return;
 
         if (state == BOND_STATE_ACTIVE) {
+            b.state = BOND_STATE_SETTLEMENT;
+            b.nextTransitionTime = uint40(block.timestamp + SETTLEMENT_PERIOD);
+
             IEVault(bond).setCaps(2, 2); // zero out both caps
 
             address[] memory collaterals = IEVault(bond).LTVList();
@@ -190,25 +190,21 @@ contract LayerCredit is EVCUtil {
             for (uint256 i = 0; i < collaterals.length; ++i) {
                 IEVault(bond).setLTV(collaterals[i], 0, IEVault(bond).LTVLiquidation(collaterals[i]), 0);
             }
+        } else if (state == BOND_STATE_SETTLEMENT) {
+            b.state = BOND_STATE_FINAL;
 
-            b.nextTransitionTime = uint40(block.timestamp + 3 days);
-            b.state = BOND_STATE_SOFT_SETTLEMENT;
-        } else if (state == BOND_STATE_SOFT_SETTLEMENT) {
             address[] memory collaterals = IEVault(bond).LTVList();
 
             for (uint256 i = 0; i < collaterals.length; ++i) {
-                IEVault(bond).setLTV(collaterals[i], 0, 0, 3 days);
+                IEVault(bond).setLTV(collaterals[i], 0, 0, LTV_RAMP_DOWN_PERIOD);
             }
 
-            b.nextTransitionTime = uint40(block.timestamp + 3 days);
-            b.state = BOND_STATE_HARD_SETTLEMENT;
-        } else if (state == BOND_STATE_HARD_SETTLEMENT) {
             IEVault(bond).setGovernorAdmin(address(0));
-            b.nextTransitionTime = type(uint40).max;
-            b.state = BOND_STATE_FINAL;
         }
 
         _addToHistory(HISTORY_ACTION_TRANSITION, bond, address(0), b.state);
+
+        // FIXME: touch vault to update IR?
     }
 
 
@@ -273,7 +269,7 @@ contract LayerCredit is EVCUtil {
 
         if (state == BOND_STATE_ACTIVE) {
             return b.interestRate;
-        } else if (state == BOND_STATE_SOFT_SETTLEMENT || state == BOND_STATE_HARD_SETTLEMENT) {
+        } else if (state == BOND_STATE_SETTLEMENT) {
             return b.interestRate * 3;
         }
 
