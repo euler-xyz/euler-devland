@@ -91,6 +91,7 @@ contract LayerCreditPopulated is LayerCreditBasic {
             borrower: address(0),
             interestRate: p.interestRate,
             earlyRepayPenalty: 0,
+            penaltyReceiver: address(0),
 
             collaterals: collaterals
         }));

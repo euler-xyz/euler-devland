@@ -1,26 +1,22 @@
 contract
-  early repay penalty
-    repay method in LayerCredit that pulls in repay amount+fee
-      deposit the collected penalty into the bond vault on behalf of creator (works great if creator is earn vault)
-  ? secondary market for trading bond shares (separate contract)
-
-  misc
-    factor into multiple files, structured storage
-    storage packing, code-size reduction
-    tests
-
-bugs
-  if asset is WETH and unit of account is WETH, it breaks. probably just don't install oracle in router
-  when wallet not connected stuff breaks
-    disable buttons etc
+  ! tests
+  secondary market for trading bond shares (separate contract)
+  ? factor into multiple files, structured storage
+  ? storage packing, code-size reduction
 
 docs
+
 licenses
 
 lens
   return oracle prices
 
-UI
+UI bugs
+  if asset is WETH and unit of account is WETH, it breaks. probably just don't install oracle in router
+  when wallet not connected stuff breaks
+    disable buttons etc
+
+UI screens
   homepage
     active bonds (sorted by totalSupply)
     global history
@@ -62,8 +58,9 @@ UI
     add custom tokens
     add custom oracles
 
+UI misc
   oracle integrity whitelist
-  subaccount selector
+  subaccount selection
   url parameters
   command bar
   ? spy mode

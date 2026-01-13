@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.27;
 
-import "forge-std/console.sol"; //FIXME
-
 import {EnumerableSet} from "openzeppelin-contracts/utils/structs/EnumerableSet.sol";
 import {SafeERC20, IERC20} from "openzeppelin-contracts/token/ERC20/utils/SafeERC20.sol";
 
@@ -66,6 +64,7 @@ contract LayerCredit is EVCUtil {
         address borrower;
         uint80 interestRate;
         uint64 earlyRepayPenalty;
+        address penaltyReceiver;
 
         DeployBondCollateral[] collaterals;
     }
@@ -81,9 +80,10 @@ contract LayerCredit is EVCUtil {
         uint40 termStart;
         address lender;
         address borrower;
-        uint64 earlyRepayPenalty;
         uint80 interestRate;
         uint40 nextTransitionTime;
+        uint64 earlyRepayPenalty;
+        address penaltyReceiver;
     }
 
     mapping(address vault => BondState) private bondsByVault;
@@ -108,8 +108,6 @@ contract LayerCredit is EVCUtil {
         require(p.termDuration <= MAX_TERM_DURATION, InvalidTermDuration());
         require(p.collaterals.length >= 1 && p.collaterals.length <= MAX_COLLATERALS, InvalidNumberOfCollaterals());
         require(p.earlyRepayPenalty <= 1e18, InvalidEarlyRepayPenalty());
-        // If lender is 0 (non-restricted), then early repay penalty must be 0 since there is no way to distribute the penalty to multiple lenders
-        require(p.lender != address(0) || p.earlyRepayPenalty == 0, InvalidEarlyRepayPenalty());
 
         IEulerRouter router = IEulerRouter(IEulerRouterFactory(routerFactory).deploy(address(this)));
         IEVault vault = IEVault(GenericFactory(eVaultFactory).createProxy(address(0), false, abi.encodePacked(p.asset, address(router), p.unitOfAccount)));
@@ -124,9 +122,10 @@ contract LayerCredit is EVCUtil {
             termStart: uint40(block.timestamp),
             lender: p.lender,
             borrower: p.borrower,
-            earlyRepayPenalty: p.earlyRepayPenalty,
             interestRate: p.interestRate,
-            nextTransitionTime: termEnd
+            nextTransitionTime: termEnd,
+            earlyRepayPenalty: p.earlyRepayPenalty,
+            penaltyReceiver: p.penaltyReceiver
         });
 
         activeBonds.add(address(vault));
@@ -183,7 +182,7 @@ contract LayerCredit is EVCUtil {
             b.state = BOND_STATE_SETTLEMENT;
             b.nextTransitionTime = uint40(block.timestamp + SETTLEMENT_PERIOD);
 
-            IEVault(bond).setCaps(2, 2); // zero out both caps
+            IEVault(bond).setCaps(2, 2); // zero out both supply and borrow caps
 
             address[] memory collaterals = IEVault(bond).LTVList();
 
@@ -204,7 +203,7 @@ contract LayerCredit is EVCUtil {
 
         _addToHistory(HISTORY_ACTION_TRANSITION, bond, address(0), b.state);
 
-        // FIXME: touch vault to update IR?
+        IEVault(bond).touch(); // update interest rate
     }
 
 
@@ -440,7 +439,7 @@ contract LayerCredit is EVCUtil {
         return (amount, interestRemaining * b.earlyRepayPenalty / 1e18);
     }
 
-    function repayBond(address bond, uint256 amount, address receiver) external nonReentrant returns (uint256) {
+    function repayBond(address bond, uint256 amount, address receiver) external nonReentrant returns (uint256, uint256) {
         uint256 penalty;
         (amount, penalty) = getRepayPenalty(bond, amount, receiver);
 
@@ -449,11 +448,11 @@ contract LayerCredit is EVCUtil {
         token.forceApprove(bond, amount + penalty);
 
         IEVault(bond).repay(amount, receiver);
-        IEVault(bond).deposit(penalty, bondsByVault[bond].lender);
+        token.safeTransfer(bondsByVault[bond].penaltyReceiver, penalty);
 
         _addToHistory(HISTORY_ACTION_REPAY, bond, receiver, (amount.to_dfloat16() << 16) | penalty.to_dfloat16());
 
-        return amount + penalty;
+        return (amount, penalty);
     }
 
 
@@ -486,9 +485,9 @@ contract LayerCredit is EVCUtil {
     }
 
     function deposit(uint256 amount, address receiver) external {
-        (address bond, address msgSender) = hookInfo();
+        (address bond,) = hookInfo();
         _enforceLender(bond, receiver);
-        if (msgSender != address(this)) _addToHistory(HISTORY_ACTION_DEPOSIT, bond, receiver, amount.to_dfloat16());
+        _addToHistory(HISTORY_ACTION_DEPOSIT, bond, receiver, amount.to_dfloat16());
     }
 
     function mint(uint256 shares, address receiver) external {
