@@ -51,7 +51,7 @@ contract LayerCreditLens {
                     w1 = (w1 << 16) | supplyAPY.to_dfloat16();
                     w1 = (w1 << 16) | borrowAPY.to_dfloat16();
                 }
-                w1 = (w1 << 16) | uint256(b.earlyRepayPenalty).to_dfloat16();
+                w1 = (w1 << 16) | b.earlyRepayPenalty;
                 w1 = (w1 << (20*8)) | uint256(uint160(b.lender));
             }
 
@@ -119,6 +119,7 @@ contract LayerCreditLens {
         uint256 totalBorrows;
         uint256 totalShares;
         uint40 nextTransitionTime;
+        address penaltyReceiver;
         DetailedCollateralInfo[] collaterals;
     }
 
@@ -136,6 +137,7 @@ contract LayerCreditLens {
         info.totalBorrows = IEVault(bond).totalBorrows();
         info.totalShares = IEVault(bond).totalSupply();
         info.nextTransitionTime = bondState.nextTransitionTime;
+        info.penaltyReceiver = bondState.penaltyReceiver;
 
         address[] memory ltvs = IEVault(bond).LTVList();
         info.collaterals = new DetailedCollateralInfo[](ltvs.length);
@@ -167,6 +169,7 @@ contract LayerCreditLens {
     struct MyBondBalances {
         uint256 myShares;
         uint256 myDebt;
+        uint256 myEarlyRepayPenalty;
         uint256 myUnderlyingBalance;
         uint256 myApprovalVault;
         uint256 myApprovalLayerCredit;
@@ -187,6 +190,8 @@ contract LayerCreditLens {
 
             bals[i].myShares = IEVault(bond).balanceOf(me);
             bals[i].myDebt = IEVault(bond).debtOf(me);
+
+            if (bals[i].myDebt != 0) (, bals[i].myEarlyRepayPenalty) = LayerCredit(layerCredit).getRepayPenalty(bond, type(uint256).max, me);
 
             IERC20 asset = IERC20(IEVault(bond).asset());
 

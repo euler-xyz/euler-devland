@@ -11,6 +11,9 @@ licenses
 lens
   return oracle prices
 
+oracle provenance
+  https://oracle-checks-data.euler.finance/1/adapters/all.json
+
 UI bugs
   if asset is WETH and unit of account is WETH, it breaks. probably just don't install oracle in router
   when wallet not connected stuff breaks

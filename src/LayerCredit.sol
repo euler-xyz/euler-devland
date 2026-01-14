@@ -63,7 +63,7 @@ contract LayerCredit is EVCUtil {
         address lender;
         address borrower;
         uint80 interestRate;
-        uint64 earlyRepayPenalty;
+        uint16 earlyRepayPenalty;
         address penaltyReceiver;
 
         DeployBondCollateral[] collaterals;
@@ -81,9 +81,9 @@ contract LayerCredit is EVCUtil {
         address lender;
         address borrower;
         uint80 interestRate;
-        uint40 nextTransitionTime;
-        uint64 earlyRepayPenalty;
+        uint16 earlyRepayPenalty;
         address penaltyReceiver;
+        uint40 nextTransitionTime;
     }
 
     mapping(address vault => BondState) private bondsByVault;
@@ -107,7 +107,7 @@ contract LayerCredit is EVCUtil {
         require(originalFactoryImplementation == eVaultFactory.implementation(), FactoryImplementationChanged());
         require(p.termDuration <= MAX_TERM_DURATION, InvalidTermDuration());
         require(p.collaterals.length >= 1 && p.collaterals.length <= MAX_COLLATERALS, InvalidNumberOfCollaterals());
-        require(p.earlyRepayPenalty <= 1e18, InvalidEarlyRepayPenalty());
+        require(p.earlyRepayPenalty <= 1e4, InvalidEarlyRepayPenalty());
 
         IEulerRouter router = IEulerRouter(IEulerRouterFactory(routerFactory).deploy(address(this)));
         IEVault vault = IEVault(GenericFactory(eVaultFactory).createProxy(address(0), false, abi.encodePacked(p.asset, address(router), p.unitOfAccount)));
@@ -123,9 +123,9 @@ contract LayerCredit is EVCUtil {
             lender: p.lender,
             borrower: p.borrower,
             interestRate: p.interestRate,
-            nextTransitionTime: termEnd,
             earlyRepayPenalty: p.earlyRepayPenalty,
-            penaltyReceiver: p.penaltyReceiver
+            penaltyReceiver: p.penaltyReceiver,
+            nextTransitionTime: termEnd
         });
 
         activeBonds.add(address(vault));
@@ -164,7 +164,7 @@ contract LayerCredit is EVCUtil {
 
         router.transferGovernance(address(0));
 
-        _addToHistory(HISTORY_ACTION_BONDDEPLOY, address(vault), _msgSender(), 0);
+        _addToHistory(HISTORY_ACTION_BONDDEPLOY, address(vault), p.lender != address(0) ? p.lender : _msgSender(), 0);
 
         return address(vault);
     }
@@ -303,8 +303,6 @@ contract LayerCredit is EVCUtil {
     uint8 internal constant HISTORY_ACTION_LIQUIDATE = 6;
     uint8 internal constant HISTORY_ACTION_BONDDEPLOY = 100;
     uint8 internal constant HISTORY_ACTION_TRANSITION = 101;
-    uint8 internal constant HISTORY_ACTION_RESERVE = 102;
-    uint8 internal constant HISTORY_ACTION_UNRESERVE = 103;
 
     error MetadataTooBig();
 
@@ -436,7 +434,7 @@ contract LayerCredit is EVCUtil {
         (uint256 multiplier,) = RPow.rpow(b.interestRate + 1e27, timeRemaining, 1e27);
         uint256 interestRemaining = (multiplier - 1e27) * amount / 1e27;
 
-        return (amount, interestRemaining * b.earlyRepayPenalty / 1e18);
+        return (amount, interestRemaining * b.earlyRepayPenalty / 1e4);
     }
 
     function repayBond(address bond, uint256 amount, address receiver) external nonReentrant returns (uint256, uint256) {
@@ -450,7 +448,7 @@ contract LayerCredit is EVCUtil {
         IEVault(bond).repay(amount, receiver);
         token.safeTransfer(bondsByVault[bond].penaltyReceiver, penalty);
 
-        _addToHistory(HISTORY_ACTION_REPAY, bond, receiver, (amount.to_dfloat16() << 16) | penalty.to_dfloat16());
+        _addToHistory(HISTORY_ACTION_REPAY, bond, receiver, (uint256(amount.to_dfloat16()) << 16) | uint256(penalty.to_dfloat16()));
 
         return (amount, penalty);
     }
