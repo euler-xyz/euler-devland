@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.27;
 
-import "forge-std/console.sol"; //FIXME
 import {IEVC} from "evc/interfaces/IEthereumVaultConnector.sol";
 import {IEVault, IERC20} from "evk/EVault/IEVault.sol";
 import {EulerRouter} from "./vendor/EulerRouter/EulerRouter.sol";
@@ -13,7 +12,7 @@ contract LayerCreditLens {
     using DFloat16 for uint256;
 
     // word0: 20 + 1 + 1 + 5 + 5
-    //   vault, state, flags(borrowerRestricted), termEnd, termStart
+    //   vault, state, flags(blockIdleDeposits, borrowerRestricted), termEnd, termStart
     // word1: 1 + 2 + 2 + 2 + 2 + 2 + 20
     //   assetDecimals, cash, borrows, supplyAPY, borrowAPY, earlyRepayPenalty, lender
     // word2: 1 + 20 + 8
@@ -26,6 +25,7 @@ contract LayerCreditLens {
         unchecked {
             {
                 uint8 bondFlags;
+                if (b.blockIdleDeposits) bondFlags |= 2;
                 if (b.borrower != address(0)) bondFlags |= 1;
 
                 w0 = uint160(bond);
@@ -231,10 +231,7 @@ contract LayerCreditLens {
         return uint40((r >> (byteOffset * 8)) & type(uint40).max);
     }
 
-    function getHistoryForEntity(address layerCredit, address entity) external view returns (HistoryEntry[] memory entries) {
-        LayerCredit lc = LayerCredit(layerCredit);
-
-        uint256[] memory raw = lc.getHistoryForEntity(entity, 0, type(uint256).max);
+    function decodeHistEntries(LayerCredit lc, uint256[] memory raw) internal view returns (HistoryEntry[] memory entries) {
         entries = new HistoryEntry[](raw.length);
 
         for (uint256 i = 0; i < raw.length; ++i) {
@@ -247,6 +244,33 @@ contract LayerCreditLens {
             entries[i].decimals = IEVault(bond).decimals();
         }
     }
+
+    function getHistoryGlobal(address layerCredit, uint256 limit, uint256 resume) external view returns (HistoryEntry[] memory entries, uint256 next) {
+        LayerCredit lc = LayerCredit(layerCredit);
+
+        uint256 histLength = lc.historyLength();
+        if (resume == 0 || resume > histLength) resume = histLength;
+        if (limit > resume) limit = resume;
+
+        uint256[] memory raw = lc.getHistoryGlobal(resume - limit, resume);
+
+        entries = decodeHistEntries(lc, raw);
+        next = resume - limit;
+    }
+
+    function getHistoryForEntity(address layerCredit, address entity, uint256 limit, uint256 resume) external view returns (HistoryEntry[] memory entries, uint256 next) {
+        LayerCredit lc = LayerCredit(layerCredit);
+
+        uint256 histLength = lc.getHistEntityLength(entity);
+        if (resume == 0 || resume > histLength) resume = histLength;
+        if (limit > resume) limit = resume;
+
+        uint256[] memory raw = lc.getHistoryForEntity(entity, resume - limit, resume);
+
+        entries = decodeHistEntries(lc, raw);
+        next = resume - limit;
+    }
+
 
 
 

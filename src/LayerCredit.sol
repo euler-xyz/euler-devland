@@ -65,6 +65,7 @@ contract LayerCredit is EVCUtil {
         uint80 interestRate;
         uint16 earlyRepayPenalty;
         address penaltyReceiver;
+        bool blockIdleDeposits;
 
         DeployBondCollateral[] collaterals;
     }
@@ -83,6 +84,7 @@ contract LayerCredit is EVCUtil {
         uint80 interestRate;
         uint16 earlyRepayPenalty;
         address penaltyReceiver;
+        bool blockIdleDeposits;
         uint40 nextTransitionTime;
     }
 
@@ -90,6 +92,13 @@ contract LayerCredit is EVCUtil {
     EnumerableSet.AddressSet private activeBonds;
     EnumerableSet.AddressSet private settlingBonds;
     address[] private inactiveBonds;
+
+    struct BondTransientState {
+        bool exists;
+        uint112 startingCash;
+    }
+
+    mapping(address vault => BondTransientState) private bondsTransient;
 
 
     error FactoryImplementationChanged();
@@ -125,6 +134,7 @@ contract LayerCredit is EVCUtil {
             interestRate: p.interestRate,
             earlyRepayPenalty: p.earlyRepayPenalty,
             penaltyReceiver: p.penaltyReceiver,
+            blockIdleDeposits: p.blockIdleDeposits,
             nextTransitionTime: termEnd
         });
 
@@ -133,7 +143,7 @@ contract LayerCredit is EVCUtil {
         // Configure vault
 
         vault.setInterestRateModel(address(this));
-        vault.setHookConfig(address(this), OP_DEPOSIT | OP_MINT | OP_SKIM | OP_WITHDRAW | OP_REDEEM | OP_TRANSFER | OP_BORROW | OP_REPAY | OP_REPAY_WITH_SHARES | OP_PULL_DEBT | OP_CONVERT_FEES | OP_LIQUIDATE);
+        vault.setHookConfig(address(this), OP_DEPOSIT | OP_MINT | OP_SKIM | OP_WITHDRAW | OP_REDEEM | OP_TRANSFER | OP_BORROW | OP_REPAY | OP_REPAY_WITH_SHARES | OP_PULL_DEBT | OP_CONVERT_FEES | OP_LIQUIDATE | OP_VAULT_STATUS_CHECK);
         vault.setMaxLiquidationDiscount(0.15e4);
         vault.setLiquidationCoolOffTime(1);
 
@@ -455,6 +465,15 @@ contract LayerCredit is EVCUtil {
 
 
 
+    function _snapshotCash(address bond) internal {
+        if (bondsByVault[bond].blockIdleDeposits && !bondsTransient[bond].exists) {
+            bondsTransient[bond].exists = true;
+            bondsTransient[bond].startingCash = uint112(IEVault(bond).cash());
+        }
+    }
+
+
+
     // Purposes of hooks:
     // * enforce restricted lender/borrowers (including pullDebt, but not transfers)
     // * ensure operations can't happen after transition times
@@ -485,18 +504,21 @@ contract LayerCredit is EVCUtil {
     function deposit(uint256 amount, address receiver) external {
         (address bond,) = hookInfo();
         _enforceLender(bond, receiver);
+        _snapshotCash(bond);
         _addToHistory(HISTORY_ACTION_DEPOSIT, bond, receiver, amount.to_dfloat16());
     }
 
     function mint(uint256 shares, address receiver) external {
         (address bond,) = hookInfo();
         _enforceLender(bond, receiver);
+        _snapshotCash(bond);
         _addToHistory(HISTORY_ACTION_DEPOSIT, bond, receiver, IEVault(bond).convertToAssets(shares).to_dfloat16());
     }
 
     function skim(uint256 amount, address receiver) external {
         (address bond,) = hookInfo();
         _enforceLender(bond, receiver);
+        _snapshotCash(bond);
         _addToHistory(HISTORY_ACTION_DEPOSIT, bond, receiver, amount.to_dfloat16());
     }
 
@@ -565,5 +587,18 @@ contract LayerCredit is EVCUtil {
         _addToHistory(HISTORY_ACTION_LIQUIDATE, bond, violator, amountCompressed, msgSender);
         _addToHistory(HISTORY_ACTION_REPAY, bond, violator, amountCompressed);
         _addToHistory(HISTORY_ACTION_BORROW, bond, msgSender, amountCompressed);
+    }
+
+    error IdleDeposit();
+
+    function checkVaultStatus() external returns (bytes4) {
+        (address bond,) = hookInfo();
+
+        if (bondsByVault[bond].blockIdleDeposits && bondsTransient[bond].exists) {
+            require(IEVault(bond).cash() <= bondsTransient[bond].startingCash, IdleDeposit());
+            delete bondsTransient[bond];
+        }
+
+        return 0; // ignored when called as a hook
     }
 }

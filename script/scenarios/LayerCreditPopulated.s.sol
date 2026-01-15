@@ -43,11 +43,27 @@ contract LayerCreditPopulated is LayerCreditBasic {
             ltv2: 0
         }));
 
-        vm.warp(block.timestamp + 10 days);
+        deployBond(NewBondParams({
+            asset: address(assetWETH),
+            termDuration: 80 days,
+            interestRate: ir11p2,
+            earlyRepayPenalty: 1e4,
+            col0: address(assetUSDC),
+            ltv0: 0.85e4,
+            col1: address(assetUSDT),
+            ltv1: 0.8e4,
+            col2: address(0),
+            ltv2: 0
+        }));
+
+        // FIXME: can't figure this out
+        //vm.warp(vm.getBlockTimestamp() + 10 days);
+        //vm.rpc("increaseTime", string(abi.encode(10 days)));
+        //vm.rpc("evm_increaseTime", string("[\"00000000000000000000000000000000000000000000000000000000000d2f00\"]"));
 
         deployBond(NewBondParams({
             asset: address(assetUSDC),
-            termDuration: 90 days,
+            termDuration: 45 days,
             interestRate: ir5p0,
             earlyRepayPenalty: 0.5e4,
             col0: address(assetWETH),
@@ -95,6 +111,7 @@ contract LayerCreditPopulated is LayerCreditBasic {
             interestRate: p.interestRate,
             earlyRepayPenalty: p.earlyRepayPenalty,
             penaltyReceiver: address(0),
+            blockIdleDeposits: false,
 
             collaterals: collaterals
         }));
