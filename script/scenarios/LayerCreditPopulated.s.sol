@@ -3,7 +3,7 @@ pragma solidity ^0.8.27;
 
 import {LayerCreditBasic} from "./LayerCreditBasic.s.sol";
 
-import {LayerCredit} from "../../src/LayerCredit.sol";
+import {LayerCredit} from "layer-credit/LayerCredit.sol";
 
 
 contract LayerCreditPopulated is LayerCreditBasic {

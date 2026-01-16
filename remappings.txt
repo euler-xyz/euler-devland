@@ -13,3 +13,4 @@ euler-vault-kit/=libflat/euler-vault-kit/src/
 evk/=libflat/euler-vault-kit/src/
 evk-test/=libflat/euler-vault-kit/test/
 euler-swap/=libflat/euler-swap/src/
+layer-credit/=libflat/layer-credit/src/

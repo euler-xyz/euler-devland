@@ -123,7 +123,12 @@ contract EulerRouter is Governable, IPriceOracle {
     function resolveOracle(uint256 inAmount, address base, address quote)
         public
         view
-        returns (uint256, /* resolvedAmount */ address, /* base */ address, /* quote */ address /* oracle */ )
+        returns (
+            uint256, /* resolvedAmount */
+            address, /* base */
+            address, /* quote */
+            address /* oracle */
+        )
     {
         // 1. Check the base case.
         if (base == quote) return (inAmount, base, quote, address(0));

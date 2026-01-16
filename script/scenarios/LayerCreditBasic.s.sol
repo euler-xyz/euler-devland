@@ -3,8 +3,8 @@ pragma solidity ^0.8.27;
 
 import {DeployScenario} from "../DeployScenario.s.sol";
 
-import {LayerCredit} from "../../src/LayerCredit.sol";
-import {LayerCreditLens} from "../../src/LayerCreditLens.sol";
+import {LayerCredit} from "layer-credit/LayerCredit.sol";
+import {LayerCreditLens} from "layer-credit/LayerCreditLens.sol";
 
 contract LayerCreditBasic is DeployScenario {
     LayerCredit layerCredit;

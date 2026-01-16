@@ -4,7 +4,7 @@ out = "out"
 libs = ["lib"]
 
 auto_detect_remappings = false
-solc = "0.8.27"
+solc = "0.8.30"
 fs_permissions = [{ access = "read-write", path = "./dev-ctx/"}]
 
 [lint]

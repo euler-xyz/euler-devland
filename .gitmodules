@@ -28,3 +28,6 @@
 [submodule "libflat/euler-interfaces"]
 	path = libflat/euler-interfaces
 	url = https://github.com/euler-xyz/euler-interfaces
+[submodule "libflat/layer-credit"]
+	path = libflat/layer-credit
+	url = git@github.com:euler-xyz/layer-credit
