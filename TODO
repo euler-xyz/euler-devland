@@ -3,6 +3,7 @@ contract
   secondary market for trading bond shares (separate contract)
   ? factor into multiple files, structured storage
   ? storage packing, code-size reduction
+  ? flag in history for when debt or balance goes exactly to 0 after a repay/etc
 
 docs
 
