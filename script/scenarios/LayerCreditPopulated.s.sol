@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.27;
 
-import {LayerCreditBasic} from "./LayerCreditBasic.s.sol";
-
+import {TestERC20} from "evk-test/mocks/TestERC20.sol";
+import {IEVault, IERC20} from "evk/EVault/IEVault.sol";
 import {LayerCredit} from "layer-credit/LayerCredit.sol";
+
+import {LayerCreditBasic} from "./LayerCreditBasic.s.sol";
 
 
 contract LayerCreditPopulated is LayerCreditBasic {
@@ -11,6 +13,8 @@ contract LayerCreditPopulated is LayerCreditBasic {
     uint80 constant ir5p0 = 1546098755264741952;
     uint80 constant ir6p25 = 1921117789660685933;
     uint80 constant ir11p2 = 3364082691096290665;
+
+    address[] bondList;
 
     struct NewBondParams {
         address asset;
@@ -28,8 +32,6 @@ contract LayerCreditPopulated is LayerCreditBasic {
     function setup() internal virtual override {
         super.setup();
 
-        vm.startBroadcast(user0PK);
-
         deployBond(NewBondParams({
             asset: address(assetWETH),
             termDuration: 90 days,
@@ -42,6 +44,13 @@ contract LayerCreditPopulated is LayerCreditBasic {
             col2: address(0),
             ltv2: 0
         }));
+
+        doDeposit(user1PK, 23e18);
+        doDeposit(user2PK, 7.123993e18);
+        doDeposit(user3PK, 45.9283e18);
+
+        doBorrow(user5PK, 10e18, assetUSDC, 39500e6);
+        doBorrow(user6PK, 1e18, assetUSDC, 4000.872511e6);
 
         deployBond(NewBondParams({
             asset: address(assetWETH),
@@ -73,11 +82,11 @@ contract LayerCreditPopulated is LayerCreditBasic {
             col2: address(eWETH),
             ltv2: 0.6e4
         }));
-
-        vm.stopBroadcast();
     }
 
     function deployBond(NewBondParams memory p) internal {
+        vm.startBroadcast(user9PK);
+
         uint256 nCol = 1;
         if (p.col1 != address(0)) nCol++;
         if (p.col2 != address(0)) nCol++;
@@ -100,7 +109,7 @@ contract LayerCreditPopulated is LayerCreditBasic {
             collaterals[2].liquidationLTV = p.ltv2;
         }
 
-        layerCredit.deployBond(LayerCredit.DeployBondParams({
+        address bond = layerCredit.deployBond(LayerCredit.DeployBondParams({
             asset: address(p.asset),
             unitOfAccount: unitOfAccount,
             oracle: address(oracle),
@@ -115,5 +124,42 @@ contract LayerCreditPopulated is LayerCreditBasic {
 
             collaterals: collaterals
         }));
+
+        bondList.push(bond);
+
+        vm.stopBroadcast();
+    }
+
+    function doDeposit(uint256 privKey, uint256 amount) internal {
+        vm.startBroadcast(privKey);
+        IEVault bond = latestBond();
+
+        TestERC20(bond.asset()).mint(vm.addr(privKey), amount);
+        IERC20(bond.asset()).approve(address(bond), amount);
+        bond.deposit(amount, vm.addr(privKey));
+
+        vm.stopBroadcast();
+    }
+
+    function doBorrow(uint256 privKey, uint256 borrowAmount, TestERC20 collateral, uint256 collateralAmount) internal {
+        vm.startBroadcast(privKey);
+        IEVault bond = latestBond();
+
+        collateral.mint(vm.addr(privKey), collateralAmount);
+        address vault = layerCredit.escrowVaults(address(collateral));
+        if (vault == address(0)) vault = address(collateral); // external vault
+        IERC20(IEVault(vault).asset()).approve(vault, collateralAmount);
+        IEVault(vault).deposit(collateralAmount, vm.addr(privKey));
+
+        evc.enableCollateral(vm.addr(privKey), vault);
+        evc.enableController(vm.addr(privKey), address(bond));
+
+        bond.borrow(borrowAmount, vm.addr(privKey));
+
+        vm.stopBroadcast();
+    }
+
+    function latestBond() internal view returns (IEVault) {
+        return IEVault(bondList[bondList.length - 1]);
     }
 }

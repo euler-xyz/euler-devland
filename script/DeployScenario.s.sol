@@ -53,11 +53,23 @@ contract DeployScenario is Script {
     uint256 user1PK = 0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d;
     uint256 user2PK = 0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a;
     uint256 user3PK = 0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6;
+    uint256 user4PK = 0x47e179ec197488593b187f80a00eb0da91f1b9d0b13f8733639f19c30a34926a;
+    uint256 user5PK = 0x8b3a350cf5c34c9194ca85829a2df0ec3153be0318b5e2d3348e872092edffba;
+    uint256 user6PK = 0x92db14e403b83dfe3df233f83dfa3a0d7096f21ca9b0d6d6b8d88b2b4ec1564e;
+    uint256 user7PK = 0x4bbbf85ce3377467afe5d46f804f221813b2bb87f24d81f60f1fcdbf7cbf4356;
+    uint256 user8PK = 0xdbda1821b80551c9d65939329250298aa3472ba22feea921c0cf5d620ea67b97;
+    uint256 user9PK = 0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6;
 
     address user0 = vm.addr(user0PK);
     address user1 = vm.addr(user1PK);
     address user2 = vm.addr(user2PK);
     address user3 = vm.addr(user3PK);
+    address user4 = vm.addr(user4PK);
+    address user5 = vm.addr(user5PK);
+    address user6 = vm.addr(user6PK);
+    address user7 = vm.addr(user7PK);
+    address user8 = vm.addr(user8PK);
+    address user9 = vm.addr(user9PK);
 
     //////// Main system
 
