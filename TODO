@@ -1,12 +1,3 @@
-contract
-  ! tests
-  secondary market for trading bond shares (separate contract)
-  ? factor into multiple files, structured storage
-  ? storage packing, code-size reduction
-  ? flag in history for when debt or balance goes exactly to 0 after a repay/etc
-
-docs
-
 licenses
 
 lens
@@ -19,52 +10,34 @@ UI bugs
   if asset is WETH and unit of account is WETH, it breaks. probably just don't install oracle in router
   when wallet not connected stuff breaks
     disable buttons etc
+  deposits don't show up on my account right away... need to invalidate some react query
 
 UI screens
-  homepage
-    active bonds (sorted by totalSupply)
-    global history
-    news
-
   bond create screen
-    show summary in right column
+    show creation summary in right column
 
-  supply page
-    filters
-      supply asset selector
-      minimum size selection
-      term duration
-
-  borrow page
+  browse page
     filters
       borrow asset selector
       collateral asset selector
       minimum size selection
       term duration
-    list of bonds
 
   bond info page
-    show restricted borrowers/lenders
-    oracle details, prices
-    touch/transition
+    ! touch/transition
       add transition batch item to repay
-    when doing repay, if max clicked, have a checkbox to withdraw all the collateral too
-    subscreen: suppliers/borrowers
-      liquidate button
-    subscreen: open interest
-
-  my account screen
-    current positions
-      nav/ltv/leverage
-    my history
+    ! when doing repay, if max clicked, have a checkbox to withdraw all the collateral too
+    oracle details, prices
+    liquidate button in borrowers list
+    ? open interest
 
   settings screen
     add custom tokens
-    add custom oracles
+    ? add custom oracles
 
 UI misc
   oracle integrity whitelist
   subaccount selection
-  url parameters
-  command bar
+  url parameters, like chain
+  ? command bar
   ? spy mode
