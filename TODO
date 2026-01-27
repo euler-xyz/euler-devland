@@ -11,6 +11,7 @@ UI bugs
   when wallet not connected stuff breaks
     disable buttons etc
   deposits don't show up on my account right away... need to invalidate some react query
+  decode LIQUIDATE history metadata
 
 UI screens
   bond create screen
@@ -28,7 +29,6 @@ UI screens
       add transition batch item to repay
     ! when doing repay, if max clicked, have a checkbox to withdraw all the collateral too
     oracle details, prices
-    liquidate button in borrowers list
     ? open interest
 
   settings screen
