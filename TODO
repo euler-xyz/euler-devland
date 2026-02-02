@@ -1,26 +1,17 @@
-release
-  create bond summary
-  custom tokens in settings
-  test when price API failing
-  ? oracle provenance
-
------
-
 licenses
 
 lens
   return oracle prices
 
 oracle provenance
-  https://oracle-checks-data.euler.finance/1/adapters/all.json
+  can use this: https://oracle-checks-data.euler.finance/1/adapters/all.json
 
 UI bugs
   if asset is WETH and unit of account is WETH, it breaks. probably just don't install oracle in router
   when wallet not connected stuff breaks
     disable buttons etc
-  deposits don't show up on my account right away... need to invalidate some react query
   decode LIQUIDATE history metadata
-  when doing a repay(), prepend transition call to batch
+  ? when doing a repay(), prepend transition call to batch
 
 UI screens
   bond create screen
@@ -34,8 +25,6 @@ UI screens
       term duration
 
   bond info page
-    ! touch/transition
-      add transition batch item to repay
     ! when doing repay, if max clicked, have a checkbox to withdraw all the collateral too
     oracle details, prices
     ? open interest
@@ -45,8 +34,6 @@ UI screens
     ? add custom oracles
 
 UI misc
-  oracle integrity whitelist
   subaccount selection
   url parameters, like chain
-  ? command bar
   ? spy mode
