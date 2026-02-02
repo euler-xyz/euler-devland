@@ -1,0 +1,8 @@
+## Change price of ETH
+
+cast send 0xcf27F781841484d5CF7e155b44954D7224caF1dD 'function setPrice(address base, address quote, uint256 newPrice)' 0xd787A42Ee3ac477c46Dd6C912e7af795D44453d5 0x0000000000000000000000000000000000000348 3600000000000000000000 --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
+
+## Skip timestamp ahead by 91 days
+
+curl -X POST -H "Content-Type: application/json" --data `perl -MJSON -E 'say encode_json({ jsonrpc => "2.0", id => 1, method => "evm_mine", params => [time+(86400 * 91)], })'` http://127.0.0.1:8545
+
