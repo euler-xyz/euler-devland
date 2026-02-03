@@ -20,7 +20,7 @@ contract LayerCreditPopulated is LayerCreditBasic {
         address asset;
         uint256 termDuration;
         uint80 interestRate;
-        uint16 earlyRepayPenalty;
+        uint40 penaltyDuration;
         address col0;
         uint16 ltv0;
         address col1;
@@ -36,7 +36,7 @@ contract LayerCreditPopulated is LayerCreditBasic {
             asset: address(assetWETH),
             termDuration: 90 days,
             interestRate: ir2p5,
-            earlyRepayPenalty: 0e4,
+            penaltyDuration: 0,
             col0: address(assetUSDC),
             ltv0: 0.85e4,
             col1: address(0),
@@ -56,7 +56,7 @@ contract LayerCreditPopulated is LayerCreditBasic {
             asset: address(assetWETH),
             termDuration: 80 days,
             interestRate: ir11p2,
-            earlyRepayPenalty: 1e4,
+            penaltyDuration: 20 days,
             col0: address(assetUSDC),
             ltv0: 0.85e4,
             col1: address(assetUSDT),
@@ -74,7 +74,7 @@ contract LayerCreditPopulated is LayerCreditBasic {
             asset: address(assetUSDC),
             termDuration: 45 days,
             interestRate: ir5p0,
-            earlyRepayPenalty: 0.5e4,
+            penaltyDuration: 10 days,
             col0: address(assetWETH),
             ltv0: 0.8e4,
             col1: address(assetwstETH),
@@ -118,7 +118,7 @@ contract LayerCreditPopulated is LayerCreditBasic {
             lender: address(0),
             borrower: address(0),
             interestRate: p.interestRate,
-            earlyRepayPenalty: p.earlyRepayPenalty,
+            penaltyDuration: p.penaltyDuration,
             penaltyReceiver: address(0),
             blockIdleDeposits: false,
 
