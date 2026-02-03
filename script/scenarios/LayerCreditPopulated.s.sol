@@ -14,6 +14,8 @@ contract LayerCreditPopulated is LayerCreditBasic {
     uint80 constant ir6p25 = 1921117789660685933;
     uint80 constant ir11p2 = 3364082691096290665;
 
+    address penaltyReceiver = makeAddr("penaltyReceiver");
+
     address[] bondList;
 
     struct NewBondParams {
@@ -119,7 +121,7 @@ contract LayerCreditPopulated is LayerCreditBasic {
             borrower: address(0),
             interestRate: p.interestRate,
             penaltyDuration: p.penaltyDuration,
-            penaltyReceiver: address(0),
+            penaltyReceiver: penaltyReceiver,
             blockIdleDeposits: false,
 
             collaterals: collaterals
